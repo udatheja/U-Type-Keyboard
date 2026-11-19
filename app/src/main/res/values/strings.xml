@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">U Type</string>
+    <string name="ime_service_label">U Type Keyboard</string>
+    <string name="ime_subtype_en">English (U Type)</string>
+    <string name="ime_subtype_si">Sinhala Phonetic (U Type)</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_theme_logo">Theme and Settings</string>
+    <string name="cd_incognito">Incognito mode</string>
+    <string name="cd_switch_language">Switch language</string>
+    <string name="cd_text_editor">Text Editor</string>
+    <string name="cd_stylish_fonts">Stylish Fonts</string>
+    <string name="cd_clipboard">Clipboard Manager</string>
+    <string name="cd_voice_typing">Voice Typing</string>
+    <string name="cd_backspace">Backspace</string>
+    <string name="cd_enter">Enter</string>
+    <string name="cd_shift">Shift</string>
+    <string name="cd_emoji">Emoji panel</string>
+    <string name="cd_symbols">Symbols</string>
+    <string name="cd_space">Space</string>
+</resources>

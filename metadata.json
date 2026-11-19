@@ -1,0 +1,6 @@
+{
+  "name": "U Type",
+  "description": "Offline Sinhala & English Android keyboard with Singlish phonetic typing, encrypted clipboard manager, text editor, and stylish Unicode fonts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
