@@ -34,7 +34,7 @@ class TextEditorPanelView(context: Context) : LinearLayout(context) {
 
     var listener: Listener? = null
 
-    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.DARK, true)
+    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.CLASSIC_DARK, true)
     private var selectionMode = false
     private var selectButton: TextView? = null
 
@@ -218,9 +218,9 @@ class TextEditorPanelView(context: Context) : LinearLayout(context) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
             setTextColor(palette.keyText)
             background = if (flat) {
-                PanelUiUtils.roundedKeyBackground(context, palette.specialKeyBg, 12f)
+                PanelUiUtils.roundedKeySelector(context, palette.specialKeyBg, palette.keyPressedBg, 12f)
             } else {
-                PanelUiUtils.roundedKeyBackground(context, palette.keyBg, 12f)
+                PanelUiUtils.roundedKeySelector(context, palette.keyBg, palette.keyPressedBg, 12f)
             }
             layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, weight).apply {
                 marginStart = gapHalf

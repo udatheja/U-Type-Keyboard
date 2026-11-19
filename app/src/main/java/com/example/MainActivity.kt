@@ -1,33 +1,27 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,35 +29,50 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.theme.UTypeTheme
+import com.udara.Utype.settings.AppDestination
 import com.udara.Utype.settings.AppearanceScreen
+import com.udara.Utype.settings.HomeDashboardScreen
 import com.udara.Utype.settings.OnboardingScreen
 import com.udara.Utype.settings.PrivacyScreen
 import com.udara.Utype.settings.SettingsViewModel
 import com.udara.Utype.settings.ShortcutsAndDataScreen
 import com.udara.Utype.settings.TypingSettingsScreen
 
-private enum class SettingsTab(
-    val route: String,
-    val label: String,
-    val icon: ImageVector,
-) {
-    SETUP("setup", "Setup", Icons.Default.RocketLaunch),
-    THEME("theme", "Theme", Icons.Default.Palette),
-    TYPING("typing", "Typing", Icons.Default.Keyboard),
-    TOOLS("tools", "Tools", Icons.Default.Build),
-    PRIVACY("privacy", "Privacy", Icons.Default.Shield),
-}
-
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_OPEN_DESTINATION = "utype_open_destination"
+        const val DEST_THEMES = "THEMES"
+    }
+
+    private val externalDestinationState = mutableStateOf<AppDestination?>(null)
+
+    private fun parseDestination(intent: Intent?): AppDestination? {
+        return when (intent?.getStringExtra(EXTRA_OPEN_DESTINATION)) {
+            DEST_THEMES -> AppDestination.THEMES
+            else -> null
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        parseDestination(intent)?.let { target ->
+            externalDestinationState.value = target
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        parseDestination(intent)?.let { target ->
+            externalDestinationState.value = target
+        }
         setContent {
             val vm: SettingsViewModel = viewModel()
             val settings by vm.settings.collectAsStateWithLifecycle()
@@ -72,8 +81,16 @@ class MainActivity : ComponentActivity() {
             val clipboardItems by vm.clipboardItems.collectAsStateWithLifecycle()
             val statusMessage by vm.statusMessage.collectAsStateWithLifecycle()
 
-            var selectedTab by rememberSaveable { mutableStateOf(SettingsTab.SETUP) }
+            var destination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
+            val externalTarget by externalDestinationState
             val snackbarHostState = remember { SnackbarHostState() }
+
+            LaunchedEffect(externalTarget) {
+                externalTarget?.let { target ->
+                    destination = target
+                    externalDestinationState.value = null
+                }
+            }
 
             LaunchedEffect(statusMessage) {
                 statusMessage?.let { msg ->
@@ -82,94 +99,94 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (selectedTab != SettingsTab.SETUP) {
+            if (destination != AppDestination.HOME) {
                 BackHandler {
-                    selectedTab = SettingsTab.SETUP
+                    destination = AppDestination.HOME
                 }
             }
 
             UTypeTheme(themeId = settings.themeId) {
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val useRail = maxWidth >= 600.dp
-
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        containerColor = MaterialTheme.colorScheme.background,
-                        snackbarHost = { SnackbarHost(snackbarHostState) },
-                        bottomBar = {
-                            if (!useRail) {
-                                NavigationBar(
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                ) {
-                                    SettingsTab.entries.forEach { tab ->
-                                        NavigationBarItem(
-                                            selected = selectedTab == tab,
-                                            onClick = { selectedTab = tab },
-                                            icon = {
-                                                Icon(
-                                                    imageVector = tab.icon,
-                                                    contentDescription = tab.label,
-                                                )
-                                            },
-                                            label = { Text(tab.label) },
-                                            modifier = Modifier.testTag("nav_tab_${tab.route}"),
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = MaterialTheme.colorScheme.background,
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    topBar = {
+                        if (destination != AppDestination.HOME) {
+                            val title = when (destination) {
+                                AppDestination.THEMES -> "Themes & Layout"
+                                AppDestination.SETTINGS -> "Settings"
+                                AppDestination.BACKUP_CLIPBOARD -> "Clipboard & Backup"
+                                AppDestination.SETUP -> "Keyboard Setup"
+                                AppDestination.SHORTCUTS -> "Text Shortcuts"
+                                AppDestination.PRIVACY -> "Privacy & About"
+                                AppDestination.HOME -> ""
+                            }
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
+                                },
+                                navigationIcon = {
+                                    IconButton(
+                                        onClick = { destination = AppDestination.HOME },
+                                        modifier = Modifier.testTag("top_bar_back_button"),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back",
                                         )
                                     }
-                                }
-                            }
-                        },
-                    ) { innerPadding ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding),
-                        ) {
-                            if (useRail) {
-                                NavigationRail(
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    modifier = Modifier.fillMaxHeight(),
-                                ) {
-                                    SettingsTab.entries.forEach { tab ->
-                                        NavigationRailItem(
-                                            selected = selectedTab == tab,
-                                            onClick = { selectedTab = tab },
-                                            icon = {
-                                                Icon(
-                                                    imageVector = tab.icon,
-                                                    contentDescription = tab.label,
-                                                )
-                                            },
-                                            label = { Text(tab.label) },
-                                            modifier = Modifier.testTag("nav_rail_${tab.route}"),
-                                        )
-                                    }
-                                }
-                            }
-
-                            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                                when (selectedTab) {
-                                    SettingsTab.SETUP -> OnboardingScreen(
-                                        onOpenSettingsTab = { selectedTab = SettingsTab.THEME },
-                                        onOnboardingCompleted = { vm.markOnboardingDone() },
-                                    )
-                                    SettingsTab.THEME -> AppearanceScreen(
-                                        settings = settings,
-                                        viewModel = vm,
-                                    )
-                                    SettingsTab.TYPING -> TypingSettingsScreen(
-                                        settings = settings,
-                                        learnedWordCount = learnedCount,
-                                        viewModel = vm,
-                                    )
-                                    SettingsTab.TOOLS -> ShortcutsAndDataScreen(
-                                        settings = settings,
-                                        shortcuts = shortcuts,
-                                        clipboardItems = clipboardItems,
-                                        viewModel = vm,
-                                    )
-                                    SettingsTab.PRIVACY -> PrivacyScreen()
-                                }
-                            }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.background,
+                                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                                ),
+                            )
+                        }
+                    },
+                ) { innerPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .consumeWindowInsets(innerPadding),
+                    ) {
+                        when (destination) {
+                            AppDestination.HOME -> HomeDashboardScreen(
+                                onNavigate = { destination = it },
+                                onOnboardingCompleted = { vm.markOnboardingDone() },
+                            )
+                            AppDestination.THEMES -> AppearanceScreen(
+                                settings = settings,
+                                viewModel = vm,
+                            )
+                            AppDestination.SETTINGS -> TypingSettingsScreen(
+                                settings = settings,
+                                learnedWordCount = learnedCount,
+                                viewModel = vm,
+                            )
+                            AppDestination.BACKUP_CLIPBOARD -> ShortcutsAndDataScreen(
+                                settings = settings,
+                                shortcuts = shortcuts,
+                                clipboardItems = clipboardItems,
+                                viewModel = vm,
+                                focusShortcutsOnly = false,
+                            )
+                            AppDestination.SHORTCUTS -> ShortcutsAndDataScreen(
+                                settings = settings,
+                                shortcuts = shortcuts,
+                                clipboardItems = clipboardItems,
+                                viewModel = vm,
+                                focusShortcutsOnly = true,
+                            )
+                            AppDestination.SETUP -> OnboardingScreen(
+                                onOpenSettingsTab = { destination = AppDestination.THEMES },
+                                onOnboardingCompleted = { vm.markOnboardingDone() },
+                            )
+                            AppDestination.PRIVACY -> PrivacyScreen()
                         }
                     }
                 }

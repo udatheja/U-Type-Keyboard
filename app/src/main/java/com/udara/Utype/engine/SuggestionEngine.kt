@@ -98,8 +98,10 @@ class SuggestionEngine(
         if (query.isEmpty()) return result
 
         val lowerQuery = query.lowercase()
+        val isAllCaps = language == LanguageMode.ENGLISH &&
+            query.length > 1 && query.any { it.isLetter() } && query.all { !it.isLetter() || it.isUpperCase() }
         val isCapitalized = language == LanguageMode.ENGLISH &&
-            query.isNotEmpty() && query[0].isUpperCase()
+            !isAllCaps && query.isNotEmpty() && query[0].isUpperCase()
 
         val candidates = ArrayList<Pair<String, Int>>()
 
@@ -112,7 +114,8 @@ class SuggestionEngine(
                 word.startsWith(query)
             }
             if (matches) {
-                candidates.add(word to (freq * 100 + 20_000))
+                val exactBonus = if (word.equals(query, ignoreCase = language == LanguageMode.ENGLISH)) 50_000 else 0
+                candidates.add(word to (freq * 100 + 20_000 + exactBonus))
             }
         }
 
@@ -125,7 +128,8 @@ class SuggestionEngine(
                 entry.word.startsWith(query)
             }
             if (matches) {
-                candidates.add(entry.word to entry.freq)
+                val exactBonus = if (entry.word.equals(query, ignoreCase = language == LanguageMode.ENGLISH)) 15_000 else 0
+                candidates.add(entry.word to (entry.freq + exactBonus))
             }
         }
 
@@ -133,10 +137,10 @@ class SuggestionEngine(
 
         for ((word, _) in candidates) {
             if (result.size >= limit) break
-            val displayWord = if (isCapitalized && word.isNotEmpty()) {
-                word.replaceFirstChar { it.uppercaseChar() }
-            } else {
-                word
+            val displayWord = when {
+                isAllCaps -> word.uppercase()
+                isCapitalized && word.isNotEmpty() -> word.replaceFirstChar { it.uppercaseChar() }
+                else -> word
             }
             val key = displayWord.lowercase()
             if (seen.add(key)) {
@@ -145,8 +149,12 @@ class SuggestionEngine(
         }
 
         // In Sinhala mode, if fewer than limit suggestions matched, ensure the live transliteration itself is offered
-        if (language == LanguageMode.SINHALA && result.isEmpty() && query.isNotEmpty()) {
-            result.add(SuggestionItem(text = query))
+        if (language == LanguageMode.SINHALA && query.isNotEmpty() && seen.add(query.lowercase())) {
+            if (result.isEmpty()) {
+                result.add(SuggestionItem(text = query))
+            } else if (result.size < limit) {
+                result.add(SuggestionItem(text = query))
+            }
         }
 
         return result

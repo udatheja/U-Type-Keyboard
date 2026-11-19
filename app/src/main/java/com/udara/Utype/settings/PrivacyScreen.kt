@@ -1,6 +1,5 @@
 package com.udara.Utype.settings
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,13 +15,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.EnhancedEncryption
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.EnhancedEncryption
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,83 +43,67 @@ fun PrivacyScreen() {
                 .widthIn(max = 640.dp)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = "Privacy & About",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-
             Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(22.dp)),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.VerifiedUser,
-                        contentDescription = "Offline Privacy Guarantee",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp),
+                Column(modifier = Modifier.padding(16.dp)) {
+                    PrivacyItemRow(
+                        icon = Icons.Outlined.VerifiedUser,
+                        title = "Nothing Leaves Your Device",
+                        body = "U Type runs completely offline for personal use with zero ads, zero analytics, and zero cloud sync.",
                     )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = "Nothing Ever Leaves Your Device",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = "U Type is built exclusively for personal offline typing with zero network access, zero ads, and zero telemetry.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    PrivacyItemRow(
+                        icon = Icons.Outlined.CloudOff,
+                        title = "No INTERNET Permission",
+                        body = "Android itself blocks network access because android.permission.INTERNET is explicitly excluded from the app manifest.",
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    PrivacyItemRow(
+                        icon = Icons.Outlined.EnhancedEncryption,
+                        title = "Encrypted Local Clipboard",
+                        body = "Copied items are encrypted with AES-256-GCM inside Android Keystore and automatically deleted after 2 hours unless pinned.",
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    PrivacyItemRow(
+                        icon = Icons.Outlined.Lock,
+                        title = "Incognito & Password Safety",
+                        body = "Tap the Lock icon on the tool strip anytime to pause learning and clipboard saving. Password fields automatically disable both.",
+                    )
                 }
             }
 
-            PrivacyGuaranteeCard(
-                icon = Icons.Default.CloudOff,
-                title = "No INTERNET Permission",
-                body = "The Android manifest explicitly removes android.permission.INTERNET and ACCESS_NETWORK_STATE. The OS itself prevents U Type from opening any network socket.",
-            )
-
-            PrivacyGuaranteeCard(
-                icon = Icons.Default.EnhancedEncryption,
-                title = "Hardware-Encrypted Local Clipboard",
-                body = "Clipboard entries are encrypted at rest with AES-256-GCM keys inside Android Keystore and automatically deleted after 2 hours unless you pin them.",
-            )
-
-            PrivacyGuaranteeCard(
-                icon = Icons.Default.Lock,
-                title = "Incognito Lock & Password Protection",
-                body = "Tap the Lock icon in the keyboard tool strip anytime to pause word learning and clipboard capture. Password fields always disable suggestions, key popups, and clipboard saving automatically.",
-            )
-
-            // Version & Build Card
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
-                    modifier = Modifier.padding(18.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Info,
+                        imageVector = Icons.Outlined.Info,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
@@ -143,43 +125,32 @@ fun PrivacyScreen() {
 }
 
 @Composable
-private fun PrivacyGuaranteeCard(
+private fun PrivacyItemRow(
     icon: ImageVector,
     title: String,
     body: String,
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .size(22.dp),
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(22.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

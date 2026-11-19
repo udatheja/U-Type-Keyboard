@@ -4,12 +4,14 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.R
@@ -34,29 +36,40 @@ internal object PanelUiUtils {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(palette.toolStrip)
-            setPadding(dp(context, 12f), dp(context, 8f), dp(context, 12f), dp(context, 8f))
+            setPadding(dp(context, 8f), dp(context, 4f), dp(context, 12f), dp(context, 4f))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(context, 46f)
+                dp(context, 52f)
             )
 
-            val backBtn = TextView(context).apply {
-                text = "‹"
-                gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(palette.toolStrip)
+            val backHitArea = FrameLayout(context).apply {
                 contentDescription = context.getString(R.string.cd_back)
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(palette.keyText)
-                }
-                layoutParams = LinearLayout.LayoutParams(dp(context, 28f), dp(context, 28f)).apply {
-                    marginEnd = dp(context, 12f)
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(dp(context, 44f), dp(context, 44f)).apply {
+                    marginEnd = dp(context, 4f)
                 }
                 setOnClickListener { onBack() }
+
+                val backBadge = TextView(context).apply {
+                    text = "‹"
+                    gravity = Gravity.CENTER
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(palette.toolStrip)
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(palette.keyText)
+                    }
+                    layoutParams = FrameLayout.LayoutParams(
+                        dp(context, 28f),
+                        dp(context, 28f),
+                        Gravity.CENTER,
+                    )
+                }
+                addView(backBadge)
             }
-            addView(backBtn)
+            addView(backHitArea)
 
             val titleTv = TextView(context).apply {
                 text = title
@@ -89,6 +102,24 @@ internal object PanelUiUtils {
         }
     }
 
+    fun roundedKeySelector(
+        context: Context,
+        normalColor: Int,
+        pressedColor: Int,
+        cornerDp: Float = 12f,
+    ): StateListDrawable {
+        return StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                roundedKeyBackground(context, pressedColor, cornerDp),
+            )
+            addState(
+                intArrayOf(),
+                roundedKeyBackground(context, normalColor, cornerDp),
+            )
+        }
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     fun attachHoldRepeat(
         view: View,
@@ -99,10 +130,21 @@ internal object PanelUiUtils {
         val handler = Handler(Looper.getMainLooper())
         val repeater = object : Runnable {
             override fun run() {
+                if (!view.isAttachedToWindow || !view.isShown) {
+                    view.isPressed = false
+                    return
+                }
                 onTrigger()
                 handler.postDelayed(this, repeatIntervalMs)
             }
         }
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) {
+                v.isPressed = false
+                handler.removeCallbacks(repeater)
+            }
+        })
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {

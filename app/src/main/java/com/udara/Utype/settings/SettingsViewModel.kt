@@ -129,6 +129,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun importBackupFromUri(uri: Uri) {
         viewModelScope.launch {
             val result = app.backupManager.importFromUri(uri)
+            if (result.isSuccess) {
+                app.suggestionEngine.refreshDynamicData()
+            }
             _statusMessage.value = result.fold(
                 onSuccess = { summary ->
                     "Restored settings, ${summary.shortcutsCount} shortcuts, ${summary.learnedWordsCount} words, and ${summary.pinnedClipsCount} pinned clips."

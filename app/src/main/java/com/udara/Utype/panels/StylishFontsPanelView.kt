@@ -26,7 +26,7 @@ class StylishFontsPanelView(context: Context) : LinearLayout(context) {
 
     var listener: Listener? = null
 
-    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.DARK, true)
+    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.CLASSIC_DARK, true)
     private var activeStyle: StylishFontStyle = StylishFontStyle.NORMAL
     private var hasSelectedText: Boolean = false
 
@@ -107,14 +107,14 @@ class StylishFontsPanelView(context: Context) : LinearLayout(context) {
                         gravity = Gravity.CENTER
                         maxLines = 1
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, if (style == StylishFontStyle.NORMAL) 15f else 17f)
-                        setTextColor(if (isSelected) palette.accent else palette.keyText)
+                        setTextColor(palette.keyText)
                         contentDescription = style.displayName
                         background = PanelUiUtils.roundedKeyBackground(
                             context = context,
                             fillColor = palette.keyBg,
                             cornerDp = 23f,
-                            strokeColor = if (isSelected) palette.accent else null,
-                            strokeDp = 1.8f,
+                            strokeColor = if (isSelected) palette.keyText else null,
+                            strokeDp = 1.6f,
                         )
                         layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply {
                             if (c > 0) marginStart = gap

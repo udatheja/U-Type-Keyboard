@@ -62,11 +62,11 @@ class ClipboardRepository(
         val hash = crypto.hash(text)
         val existing = dao.findByHash(hash)
         val id = if (existing != null) {
-            // Refresh timestamp while keeping existing pin status
+            // Refresh timestamp while keeping existing pin status; reset unpinnedAt so re-copy starts a fresh countdown
             val updated = existing.copy(
                 createdAt = now,
                 isPinned = existing.isPinned || isPinned,
-                unpinnedAt = if (existing.isPinned || isPinned) null else existing.unpinnedAt,
+                unpinnedAt = null,
             )
             dao.upsert(updated)
         } else {

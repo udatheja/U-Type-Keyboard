@@ -6,7 +6,12 @@ import com.udara.Utype.engine.SinhalaMap
 
 /**
  * Generates keyboard key rows for QWERTY (English & Sinhala), Symbols 1 & 2, Email, and Number Pad.
- * Closely follows the U Type rounded-key layout with top-right digit/symbol hints and long-press popups.
+ *
+ * Closely follows the user's reference screenshots:
+ * - English mode: top-right hints show 1-0 and symbols (@ # _ & - + = ( ) * " ' : ; ! ?),
+ *   language toggle shows "සි", spacebar shows "ENGLISH".
+ * - Sinhala mode: top-right hints switch cleanly to Sinhala phonetic letters (ද ව එ ර ට ...),
+ *   language toggle shows "En", spacebar shows "සිංහල", period key includes Sinhala kunddaliya "෴".
  */
 object KeyboardLayouts {
 
@@ -53,6 +58,7 @@ object KeyboardLayouts {
         showHints: Boolean,
         showSinhalaHints: Boolean,
         imeAction: Int,
+        noEnterAction: Boolean = false,
     ): List<KeyRow> {
         return when (layoutMode) {
             LayoutMode.ALPHA -> buildAlphaRows(
@@ -62,6 +68,7 @@ object KeyboardLayouts {
                 showHints = showHints,
                 showSinhalaHints = showSinhalaHints,
                 imeAction = imeAction,
+                noEnterAction = noEnterAction,
                 isEmail = false,
             )
             LayoutMode.EMAIL -> buildAlphaRows(
@@ -71,11 +78,12 @@ object KeyboardLayouts {
                 showHints = showHints,
                 showSinhalaHints = false,
                 imeAction = imeAction,
+                noEnterAction = noEnterAction,
                 isEmail = true,
             )
-            LayoutMode.SYMBOLS_1 -> buildSymbols1Rows(languageMode, imeAction)
-            LayoutMode.SYMBOLS_2 -> buildSymbols2Rows(languageMode, imeAction)
-            LayoutMode.NUMBER_PAD -> buildNumberPadRows(imeAction)
+            LayoutMode.SYMBOLS_1 -> buildSymbols1Rows(languageMode, imeAction, noEnterAction)
+            LayoutMode.SYMBOLS_2 -> buildSymbols2Rows(languageMode, imeAction, noEnterAction)
+            LayoutMode.NUMBER_PAD -> buildNumberPadRows(imeAction, noEnterAction)
         }
     }
 
@@ -86,9 +94,11 @@ object KeyboardLayouts {
         showHints: Boolean,
         showSinhalaHints: Boolean,
         imeAction: Int,
+        noEnterAction: Boolean,
         isEmail: Boolean,
     ): List<KeyRow> {
         val shifted = shiftState != ShiftState.OFF
+        val isSinhala = languageMode == LanguageMode.SINHALA && !isEmail
         val rows = ArrayList<KeyRow>(5)
 
         if (showNumberRow) {
@@ -102,40 +112,48 @@ object KeyboardLayouts {
             )
         }
 
-        // Row 1: q w e r t y u i o p (with 1-0 hints unless dedicated number row is visible)
+        // Row 1: q w e r t y u i o p
         rows.add(
             KeyRow(
-                keys = row1Chars.map { (ch, hint, alts) ->
+                keys = row1Chars.map { (ch, numHint, alts) ->
                     val display = if (shifted) ch.uppercase() else ch
-                    val sHint = if (languageMode == LanguageMode.SINHALA && showSinhalaHints) {
-                        SinhalaMap.keyHints[display] ?: SinhalaMap.keyHints[ch]
-                    } else null
+                    val topRightHint = resolveTopRightHint(
+                        display = display,
+                        baseChar = ch,
+                        defaultHint = if (!showNumberRow) numHint else null,
+                        isSinhala = isSinhala,
+                        showHints = showHints,
+                        showSinhalaHints = showSinhalaHints,
+                    )
                     KeySpec(
                         label = display,
                         action = KeyAction.Text(display),
-                        hint = if (showHints && !showNumberRow) hint else null,
-                        sinhalaHint = sHint,
-                        longPressText = hint,
+                        hint = topRightHint,
+                        longPressText = numHint,
                         alternates = alts,
                     )
                 }
             )
         )
 
-        // Row 2: a s d f g h j k l (slightly indented like screenshot)
+        // Row 2: a s d f g h j k l (cleanly centered with side indent)
         rows.add(
             KeyRow(
-                keys = row2Chars.map { (ch, hint, alts) ->
+                keys = row2Chars.map { (ch, symHint, alts) ->
                     val display = if (shifted) ch.uppercase() else ch
-                    val sHint = if (languageMode == LanguageMode.SINHALA && showSinhalaHints) {
-                        SinhalaMap.keyHints[display] ?: SinhalaMap.keyHints[ch]
-                    } else null
+                    val topRightHint = resolveTopRightHint(
+                        display = display,
+                        baseChar = ch,
+                        defaultHint = symHint,
+                        isSinhala = isSinhala,
+                        showHints = showHints,
+                        showSinhalaHints = showSinhalaHints,
+                    )
                     KeySpec(
                         label = display,
                         action = KeyAction.Text(display),
-                        hint = if (showHints) hint else null,
-                        sinhalaHint = sHint,
-                        longPressText = hint,
+                        hint = topRightHint,
+                        longPressText = symHint,
                         alternates = alts,
                     )
                 },
@@ -143,9 +161,9 @@ object KeyboardLayouts {
             )
         )
 
-        // Row 3: Shift, z x c v b n m, Backspace
+        // Row 3: Shift (↑), z x c v b n m, Backspace (←)
         val shiftLabel = when (shiftState) {
-            ShiftState.OFF -> "⇧"
+            ShiftState.OFF -> "↑"
             ShiftState.ONCE -> "⬆"
             ShiftState.CAPS_LOCK -> "⇪"
         }
@@ -155,29 +173,33 @@ object KeyboardLayouts {
                 label = shiftLabel,
                 action = KeyAction.Shift,
                 weight = 1.45f,
-                style = if (shiftState == ShiftState.OFF) KeyStyle.FLAT_ICON else KeyStyle.ACCENT_ACTION,
+                style = if (shiftState == ShiftState.OFF) KeyStyle.FLAT_ICON else KeyStyle.SPECIAL,
                 showPreview = false,
             )
         )
-        row3Chars.forEach { (ch, hint, alts) ->
+        row3Chars.forEach { (ch, symHint, alts) ->
             val display = if (shifted) ch.uppercase() else ch
-            val sHint = if (languageMode == LanguageMode.SINHALA && showSinhalaHints) {
-                SinhalaMap.keyHints[display] ?: SinhalaMap.keyHints[ch]
-            } else null
+            val topRightHint = resolveTopRightHint(
+                display = display,
+                baseChar = ch,
+                defaultHint = symHint,
+                isSinhala = isSinhala,
+                showHints = showHints,
+                showSinhalaHints = showSinhalaHints,
+            )
             row3Keys.add(
                 KeySpec(
                     label = display,
                     action = KeyAction.Text(display),
-                    hint = if (showHints) hint else null,
-                    sinhalaHint = sHint,
-                    longPressText = hint,
+                    hint = topRightHint,
+                    longPressText = symHint,
                     alternates = alts,
                 )
             )
         }
         row3Keys.add(
             KeySpec(
-                label = "⌫",
+                label = "←",
                 action = KeyAction.Backspace,
                 weight = 1.45f,
                 style = KeyStyle.FLAT_ICON,
@@ -187,26 +209,33 @@ object KeyboardLayouts {
         )
         rows.add(KeyRow(keys = row3Keys))
 
-        // Row 4: "#", Emoji, Language (සි), Space ("ENGLISH" / "සිංහල"), Period, Enter
-        val enterLabel = enterLabelForAction(imeAction)
+        // Row 4: "#", Emoji (☺ + , hint), Language ("සි" in EN / "En" in SI), wide Spacebar, Period, Enter
+        val enterLabel = enterLabelForAction(imeAction, noEnterAction)
         val row4Keys = if (isEmail) {
             listOf(
                 KeySpec("#", KeyAction.SymbolsToggle, weight = 1.2f, style = KeyStyle.FLAT_ICON, showPreview = false),
                 KeySpec("@", KeyAction.Text("@"), weight = 1.0f, style = KeyStyle.SPECIAL),
                 KeySpec(".com", KeyAction.Text(".com"), weight = 1.2f, style = KeyStyle.SPECIAL, alternates = listOf(".com", ".lk", ".org", ".net", ".edu")),
-                KeySpec("SPACE", KeyAction.Space, weight = 3.9f, style = KeyStyle.SPECIAL, showPreview = false),
+                KeySpec("ENGLISH", KeyAction.Space, weight = 3.9f, style = KeyStyle.SPECIAL, showPreview = false),
                 KeySpec(".", KeyAction.Text("."), weight = 1.1f, hint = "...", longPressText = ",", alternates = listOf(",", "?", "!", "...", "'", "\""), style = KeyStyle.FLAT_ICON),
                 KeySpec(enterLabel, KeyAction.Enter, weight = 1.6f, style = KeyStyle.FLAT_ICON, showPreview = false),
             )
         } else {
+            val langToggleLabel = if (isSinhala) "En" else "සි"
+            val periodHint = if (isSinhala) "෴" else "..."
+            val periodAlternates = if (isSinhala) {
+                listOf(",", "?", "!", "...", "'", "\"", "෴")
+            } else {
+                listOf(",", "?", "!", "...", "'", "\"")
+            }
             listOf(
                 KeySpec("#", KeyAction.SymbolsToggle, weight = 1.15f, style = KeyStyle.FLAT_ICON, showPreview = false),
                 KeySpec("☺", KeyAction.Emoji, weight = 1.1f, hint = ",", longPressText = ",", style = KeyStyle.FLAT_ICON, showPreview = false),
                 KeySpec(
-                    label = "සි",
+                    label = langToggleLabel,
                     action = KeyAction.LanguageSwitch,
                     weight = 1.15f,
-                    style = if (languageMode == LanguageMode.SINHALA) KeyStyle.ACCENT_ACTION else KeyStyle.SPECIAL,
+                    style = KeyStyle.SPECIAL,
                     showPreview = false,
                 ),
                 KeySpec(
@@ -220,9 +249,9 @@ object KeyboardLayouts {
                     label = ".",
                     action = KeyAction.Text("."),
                     weight = 1.15f,
-                    hint = "...",
+                    hint = periodHint,
                     longPressText = ",",
-                    alternates = listOf(",", "?", "!", "...", "'", "\""),
+                    alternates = periodAlternates,
                     style = KeyStyle.FLAT_ICON,
                 ),
                 KeySpec(
@@ -238,7 +267,29 @@ object KeyboardLayouts {
         return rows
     }
 
-    private fun buildSymbols1Rows(languageMode: LanguageMode, imeAction: Int): List<KeyRow> {
+    /**
+     * Resolves the clean top-right corner hint on letter keys:
+     * - In Sinhala mode (when Sinhala hints are enabled): displays the Sinhala phonetic glyph
+     *   in the top-right corner (matching Screenshot 2 cleanly without crowding the key).
+     * - In English mode (or when Sinhala hints are disabled): displays the digit/symbol hint.
+     */
+    private fun resolveTopRightHint(
+        display: String,
+        baseChar: String,
+        defaultHint: String?,
+        isSinhala: Boolean,
+        showHints: Boolean,
+        showSinhalaHints: Boolean,
+    ): String? {
+        if (isSinhala && showSinhalaHints) {
+            // In Sinhala mode, 'z' is a prefix key for sanyaka (no standalone letter) just like Screenshot 2
+            if (baseChar == "z" && display == "z") return null
+            return SinhalaMap.keyHints[display] ?: SinhalaMap.keyHints[baseChar]
+        }
+        return if (showHints) defaultHint else null
+    }
+
+    private fun buildSymbols1Rows(languageMode: LanguageMode, imeAction: Int, noEnterAction: Boolean): List<KeyRow> {
         val r1 = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
         val r2 = listOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/")
         val r3 = listOf("*", "\"", "'", ":", ";", "!", "?")
@@ -250,7 +301,7 @@ object KeyboardLayouts {
                 buildList {
                     add(KeySpec("=\\<", KeyAction.SymbolsMore, weight = 1.45f, style = KeyStyle.SPECIAL, showPreview = false))
                     r3.forEach { add(KeySpec(it, KeyAction.Text(it))) }
-                    add(KeySpec("⌫", KeyAction.Backspace, weight = 1.45f, style = KeyStyle.FLAT_ICON, repeatable = true, showPreview = false))
+                    add(KeySpec("←", KeyAction.Backspace, weight = 1.45f, style = KeyStyle.FLAT_ICON, repeatable = true, showPreview = false))
                 }
             ),
             KeyRow(
@@ -259,13 +310,13 @@ object KeyboardLayouts {
                     KeySpec(",", KeyAction.Text(","), weight = 1.0f, style = KeyStyle.SPECIAL),
                     KeySpec(languageMode.spaceLabel, KeyAction.Space, weight = 4.8f, style = KeyStyle.SPECIAL, showPreview = false),
                     KeySpec(".", KeyAction.Text("."), weight = 1.1f, alternates = listOf(",", "?", "!", "...", "'", "\""), style = KeyStyle.SPECIAL),
-                    KeySpec(enterLabelForAction(imeAction), KeyAction.Enter, weight = 1.7f, style = KeyStyle.FLAT_ICON, showPreview = false),
+                    KeySpec(enterLabelForAction(imeAction, noEnterAction), KeyAction.Enter, weight = 1.7f, style = KeyStyle.FLAT_ICON, showPreview = false),
                 )
             ),
         )
     }
 
-    private fun buildSymbols2Rows(languageMode: LanguageMode, imeAction: Int): List<KeyRow> {
+    private fun buildSymbols2Rows(languageMode: LanguageMode, imeAction: Int, noEnterAction: Boolean): List<KeyRow> {
         val r1 = listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "Δ")
         val r2 = listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\")
         val r3 = listOf("%", "©", "®", "™", "✓", "[", "]")
@@ -277,7 +328,7 @@ object KeyboardLayouts {
                 buildList {
                     add(KeySpec("?123", KeyAction.SymbolsMore, weight = 1.45f, style = KeyStyle.SPECIAL, showPreview = false))
                     r3.forEach { add(KeySpec(it, KeyAction.Text(it))) }
-                    add(KeySpec("⌫", KeyAction.Backspace, weight = 1.45f, style = KeyStyle.FLAT_ICON, repeatable = true, showPreview = false))
+                    add(KeySpec("←", KeyAction.Backspace, weight = 1.45f, style = KeyStyle.FLAT_ICON, repeatable = true, showPreview = false))
                 }
             ),
             KeyRow(
@@ -286,13 +337,13 @@ object KeyboardLayouts {
                     KeySpec("<", KeyAction.Text("<"), weight = 1.0f, style = KeyStyle.SPECIAL),
                     KeySpec(languageMode.spaceLabel, KeyAction.Space, weight = 4.8f, style = KeyStyle.SPECIAL, showPreview = false),
                     KeySpec(">", KeyAction.Text(">"), weight = 1.1f, style = KeyStyle.SPECIAL),
-                    KeySpec(enterLabelForAction(imeAction), KeyAction.Enter, weight = 1.7f, style = KeyStyle.FLAT_ICON, showPreview = false),
+                    KeySpec(enterLabelForAction(imeAction, noEnterAction), KeyAction.Enter, weight = 1.7f, style = KeyStyle.FLAT_ICON, showPreview = false),
                 )
             ),
         )
     }
 
-    private fun buildNumberPadRows(imeAction: Int): List<KeyRow> {
+    private fun buildNumberPadRows(imeAction: Int, noEnterAction: Boolean): List<KeyRow> {
         return listOf(
             KeyRow(
                 listOf(
@@ -315,7 +366,7 @@ object KeyboardLayouts {
                     KeySpec("7", KeyAction.Text("7")),
                     KeySpec("8", KeyAction.Text("8")),
                     KeySpec("9", KeyAction.Text("9")),
-                    KeySpec("⌫", KeyAction.Backspace, style = KeyStyle.SPECIAL, repeatable = true, showPreview = false),
+                    KeySpec("←", KeyAction.Backspace, style = KeyStyle.SPECIAL, repeatable = true, showPreview = false),
                 )
             ),
             KeyRow(
@@ -323,18 +374,21 @@ object KeyboardLayouts {
                     KeySpec("*#", KeyAction.SymbolsToggle, style = KeyStyle.SPECIAL, showPreview = false),
                     KeySpec("0", KeyAction.Text("0"), hint = "+", longPressText = "+", alternates = listOf("+", "*")),
                     KeySpec(".", KeyAction.Text("."), style = KeyStyle.SPECIAL),
-                    KeySpec(enterLabelForAction(imeAction), KeyAction.Enter, style = KeyStyle.ACCENT_ACTION, showPreview = false),
+                    KeySpec(enterLabelForAction(imeAction, noEnterAction), KeyAction.Enter, style = KeyStyle.SPECIAL, showPreview = false),
                 )
             ),
         )
     }
 
-    private fun enterLabelForAction(imeAction: Int): String = when (imeAction) {
-        EditorInfo.IME_ACTION_SEARCH -> "🔍"
-        EditorInfo.IME_ACTION_GO -> "Go"
-        EditorInfo.IME_ACTION_SEND -> "➤"
-        EditorInfo.IME_ACTION_NEXT -> "Next"
-        EditorInfo.IME_ACTION_DONE -> "✓"
-        else -> "↵"
+    private fun enterLabelForAction(imeAction: Int, noEnterAction: Boolean): String {
+        if (noEnterAction) return "↵"
+        return when (imeAction) {
+            EditorInfo.IME_ACTION_SEARCH -> "🔍"
+            EditorInfo.IME_ACTION_GO -> "Go"
+            EditorInfo.IME_ACTION_SEND -> "➤"
+            EditorInfo.IME_ACTION_NEXT -> "Next"
+            EditorInfo.IME_ACTION_DONE -> "✓"
+            else -> "↵"
+        }
     }
 }

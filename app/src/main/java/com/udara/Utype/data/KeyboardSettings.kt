@@ -48,6 +48,7 @@ data class KeyboardPalette(
     val keyPressedBg: Int,
     val specialKeyBg: Int,
     val keyShadow: Int,
+    val keyHighlight: Int,
     val keyText: Int,
     val hintText: Int,
     val accent: Int,
@@ -63,131 +64,138 @@ enum class KeyboardThemeId(
     val subtitle: String,
     val previewSwatchHex: Long,
 ) {
-    DARK("dark", "Emerald Dark", "Default dark rounded palette", 0xFF3DD6A5),
-    LIGHT("light", "Mint Light", "Crisp daylight palette", 0xFF0B6B57),
-    SYSTEM("system", "Follow System", "Auto dark / light with OS", 0xFF2FA885),
-    MIDNIGHT("midnight", "Midnight Ocean", "Deep slate & cyan glow", 0xFF38BDF8),
-    AMBER("amber", "Amber Dusk", "Warm charcoal & gold", 0xFFF59E0B),
-    AMOLED("amoled", "Pitch AMOLED", "Pure black battery saver", 0xFF3DD6A5),
-    ROSE("rose", "Sakura Night", "Velvet plum & rose accent", 0xFFFB7185);
+    CLASSIC_DARK("classic_dark", "Classic Dark", "Clean matte charcoal keys", 0xFF525256),
+    LIGHT("light", "Clean Light", "Soft daylight gray & white", 0xFF5F6368),
+    SYSTEM("system", "Follow System", "Auto dark / light with Android", 0xFF787C82),
+    DARK("dark", "Forest Charcoal", "Deep muted slate-green", 0xFF4D8B78),
+    MIDNIGHT("midnight", "Midnight Slate", "Calm dark navy-gray", 0xFF5B8DEF),
+    AMBER("amber", "Warm Espresso", "Soft charcoal & warm sand", 0xFFD4A359),
+    AMOLED("amoled", "Pitch Black", "True black OLED surface", 0xFF3A3A3E);
 
     companion object {
         fun fromId(id: String?): KeyboardThemeId =
-            entries.firstOrNull { it.id == id } ?: DARK
+            entries.firstOrNull { it.id == id } ?: CLASSIC_DARK
 
         fun resolvePalette(themeId: KeyboardThemeId, isSystemDark: Boolean): KeyboardPalette {
             val effective = if (themeId == SYSTEM) {
-                if (isSystemDark) DARK else LIGHT
+                if (isSystemDark) CLASSIC_DARK else LIGHT
             } else {
                 themeId
             }
             return when (effective) {
-                DARK -> KeyboardPalette(
-                    background = Color.parseColor("#0A110F"),
-                    toolStrip = Color.parseColor("#131D1A"),
-                    keyBg = Color.parseColor("#1E2B27"),
-                    keyPressedBg = Color.parseColor("#2B3D38"),
-                    specialKeyBg = Color.parseColor("#15201D"),
-                    keyShadow = Color.parseColor("#050908"),
-                    keyText = Color.parseColor("#EAF2EF"),
-                    hintText = Color.parseColor("#9DB0AA"),
-                    accent = Color.parseColor("#3DD6A5"),
-                    onAccent = Color.parseColor("#062118"),
-                    divider = Color.parseColor("#23332E"),
-                    popupBg = Color.parseColor("#253631"),
+                CLASSIC_DARK -> KeyboardPalette(
+                    background = Color.parseColor("#262628"),
+                    toolStrip = Color.parseColor("#262628"),
+                    keyBg = Color.parseColor("#545458"),
+                    keyPressedBg = Color.parseColor("#6B6B70"),
+                    specialKeyBg = Color.parseColor("#444448"),
+                    keyShadow = Color.parseColor("#141416"),
+                    keyHighlight = Color.parseColor("#66666B"),
+                    keyText = Color.parseColor("#F5F5F7"),
+                    hintText = Color.parseColor("#D0D0D5"),
+                    accent = Color.parseColor("#8AB4F8"),
+                    onAccent = Color.parseColor("#111318"),
+                    divider = Color.parseColor("#38383C"),
+                    popupBg = Color.parseColor("#636368"),
                     isDark = true,
                 )
                 LIGHT -> KeyboardPalette(
-                    background = Color.parseColor("#F6F8F7"),
-                    toolStrip = Color.parseColor("#EBF0EE"),
+                    background = Color.parseColor("#EAECEF"),
+                    toolStrip = Color.parseColor("#EAECEF"),
                     keyBg = Color.parseColor("#FFFFFF"),
-                    keyPressedBg = Color.parseColor("#DCEAE5"),
-                    specialKeyBg = Color.parseColor("#E3EAE7"),
-                    keyShadow = Color.parseColor("#C7D4CF"),
-                    keyText = Color.parseColor("#0E1A16"),
-                    hintText = Color.parseColor("#56665F"),
-                    accent = Color.parseColor("#0B6B57"),
+                    keyPressedBg = Color.parseColor("#DFE3E8"),
+                    specialKeyBg = Color.parseColor("#D9DEE4"),
+                    keyShadow = Color.parseColor("#B8BFC8"),
+                    keyHighlight = Color.parseColor("#FFFFFF"),
+                    keyText = Color.parseColor("#1C1E21"),
+                    hintText = Color.parseColor("#656B73"),
+                    accent = Color.parseColor("#2F6F62"),
                     onAccent = Color.parseColor("#FFFFFF"),
-                    divider = Color.parseColor("#D5E0DC"),
+                    divider = Color.parseColor("#CFD5DC"),
                     popupBg = Color.parseColor("#FFFFFF"),
                     isDark = false,
                 )
+                DARK -> KeyboardPalette(
+                    background = Color.parseColor("#18201E"),
+                    toolStrip = Color.parseColor("#18201E"),
+                    keyBg = Color.parseColor("#2E3B37"),
+                    keyPressedBg = Color.parseColor("#3E4F4A"),
+                    specialKeyBg = Color.parseColor("#24302C"),
+                    keyShadow = Color.parseColor("#0D1210"),
+                    keyHighlight = Color.parseColor("#3B4B46"),
+                    keyText = Color.parseColor("#EDF3F1"),
+                    hintText = Color.parseColor("#B3C2BD"),
+                    accent = Color.parseColor("#6AB59E"),
+                    onAccent = Color.parseColor("#0D1C17"),
+                    divider = Color.parseColor("#2B3834"),
+                    popupBg = Color.parseColor("#3B4B46"),
+                    isDark = true,
+                )
                 MIDNIGHT -> KeyboardPalette(
-                    background = Color.parseColor("#090F1A"),
-                    toolStrip = Color.parseColor("#111B2E"),
-                    keyBg = Color.parseColor("#1B2942"),
-                    keyPressedBg = Color.parseColor("#283C5E"),
-                    specialKeyBg = Color.parseColor("#131E33"),
-                    keyShadow = Color.parseColor("#04070D"),
-                    keyText = Color.parseColor("#E8F1FC"),
-                    hintText = Color.parseColor("#8FA4C2"),
-                    accent = Color.parseColor("#38BDF8"),
-                    onAccent = Color.parseColor("#041E2B"),
-                    divider = Color.parseColor("#21324F"),
-                    popupBg = Color.parseColor("#223452"),
+                    background = Color.parseColor("#171C26"),
+                    toolStrip = Color.parseColor("#171C26"),
+                    keyBg = Color.parseColor("#2D3648"),
+                    keyPressedBg = Color.parseColor("#3D4961"),
+                    specialKeyBg = Color.parseColor("#232B3B"),
+                    keyShadow = Color.parseColor("#0D1017"),
+                    keyHighlight = Color.parseColor("#3A455C"),
+                    keyText = Color.parseColor("#EDF1F7"),
+                    hintText = Color.parseColor("#B0BAC9"),
+                    accent = Color.parseColor("#7AA7E8"),
+                    onAccent = Color.parseColor("#0F1726"),
+                    divider = Color.parseColor("#293242"),
+                    popupBg = Color.parseColor("#3A465C"),
                     isDark = true,
                 )
                 AMBER -> KeyboardPalette(
-                    background = Color.parseColor("#14110E"),
-                    toolStrip = Color.parseColor("#1E1914"),
-                    keyBg = Color.parseColor("#2B241D"),
-                    keyPressedBg = Color.parseColor("#3D3329"),
-                    specialKeyBg = Color.parseColor("#211C17"),
-                    keyShadow = Color.parseColor("#0A0806"),
-                    keyText = Color.parseColor("#F5EFE6"),
-                    hintText = Color.parseColor("#B5A796"),
-                    accent = Color.parseColor("#F59E0B"),
-                    onAccent = Color.parseColor("#241502"),
-                    divider = Color.parseColor("#352C23"),
-                    popupBg = Color.parseColor("#362D24"),
+                    background = Color.parseColor("#1E1B18"),
+                    toolStrip = Color.parseColor("#1E1B18"),
+                    keyBg = Color.parseColor("#3A342E"),
+                    keyPressedBg = Color.parseColor("#4D453D"),
+                    specialKeyBg = Color.parseColor("#2E2924"),
+                    keyShadow = Color.parseColor("#110F0D"),
+                    keyHighlight = Color.parseColor("#4A423B"),
+                    keyText = Color.parseColor("#F5F0EB"),
+                    hintText = Color.parseColor("#C2B8AD"),
+                    accent = Color.parseColor("#D4A359"),
+                    onAccent = Color.parseColor("#1C1509"),
+                    divider = Color.parseColor("#352F29"),
+                    popupBg = Color.parseColor("#4C443C"),
                     isDark = true,
                 )
                 AMOLED -> KeyboardPalette(
                     background = Color.parseColor("#000000"),
-                    toolStrip = Color.parseColor("#090C0B"),
-                    keyBg = Color.parseColor("#151C19"),
-                    keyPressedBg = Color.parseColor("#24302C"),
-                    specialKeyBg = Color.parseColor("#0D1210"),
+                    toolStrip = Color.parseColor("#000000"),
+                    keyBg = Color.parseColor("#242426"),
+                    keyPressedBg = Color.parseColor("#38383C"),
+                    specialKeyBg = Color.parseColor("#18181A"),
                     keyShadow = Color.parseColor("#000000"),
-                    keyText = Color.parseColor("#F0F7F4"),
-                    hintText = Color.parseColor("#899E97"),
-                    accent = Color.parseColor("#3DD6A5"),
-                    onAccent = Color.parseColor("#041F16"),
-                    divider = Color.parseColor("#1C2622"),
-                    popupBg = Color.parseColor("#1D2925"),
+                    keyHighlight = Color.parseColor("#333336"),
+                    keyText = Color.parseColor("#F2F2F7"),
+                    hintText = Color.parseColor("#AEAEB2"),
+                    accent = Color.parseColor("#8AB4F8"),
+                    onAccent = Color.parseColor("#0D1117"),
+                    divider = Color.parseColor("#242426"),
+                    popupBg = Color.parseColor("#333338"),
                     isDark = true,
                 )
-                ROSE -> KeyboardPalette(
-                    background = Color.parseColor("#140D12"),
-                    toolStrip = Color.parseColor("#1F141B"),
-                    keyBg = Color.parseColor("#2D1E28"),
-                    keyPressedBg = Color.parseColor("#422C3B"),
-                    specialKeyBg = Color.parseColor("#23171F"),
-                    keyShadow = Color.parseColor("#0A0609"),
-                    keyText = Color.parseColor("#F7EBF2"),
-                    hintText = Color.parseColor("#BA9DB0"),
-                    accent = Color.parseColor("#FB7185"),
-                    onAccent = Color.parseColor("#2B070E"),
-                    divider = Color.parseColor("#3A2633"),
-                    popupBg = Color.parseColor("#3A2634"),
-                    isDark = true,
-                )
-                SYSTEM -> resolvePalette(DARK, isSystemDark)
+                SYSTEM -> resolvePalette(CLASSIC_DARK, isSystemDark)
             }
         }
     }
 }
 
 data class KeyboardSettings(
-    val themeId: KeyboardThemeId = KeyboardThemeId.DARK,
-    val keyHeightDp: Float = 50f,           // 42..64 dp
-    val keyHorizontalGapDp: Float = 6f,     // 6..12 dp (never < 6dp)
-    val keyVerticalGapDp: Float = 8f,       // 8..14 dp (never < 8dp)
-    val keyCornerRadiusDp: Float = 12f,     // 4..20 dp
-    val bottomPaddingDp: Float = 10f,       // 0..36 dp for gesture bars
+    val themeId: KeyboardThemeId = KeyboardThemeId.CLASSIC_DARK,
+    val keyHeightDp: Float = 54f,           // Spacious default matching screenshots (42..66 dp)
+    val keyHorizontalGapDp: Float = 7f,     // Generous gap >= 6dp (6..12 dp)
+    val keyVerticalGapDp: Float = 9f,       // Generous row gap >= 8dp (8..14 dp)
+    val keyCornerRadiusDp: Float = 11f,     // Smooth rounded keycaps (4..20 dp)
+    val bottomPaddingDp: Float = 12f,       // Gesture bar clearance (0..36 dp)
     val showNumberRow: Boolean = false,
     val showHintCharacters: Boolean = true,
     val showSinhalaKeyHints: Boolean = true,
+    val keyPreviewPopup: Boolean = false,
     val hapticFeedback: Boolean = true,
     val keySound: Boolean = false,
     val defaultLanguage: LanguageMode = LanguageMode.ENGLISH,

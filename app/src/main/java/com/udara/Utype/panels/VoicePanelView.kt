@@ -32,7 +32,7 @@ class VoicePanelView(context: Context) : LinearLayout(context) {
 
     var listener: Listener? = null
 
-    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.DARK, true)
+    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.CLASSIC_DARK, true)
     private var voiceLocale: String = "si-LK" // "si-LK" or "en-US"
     private var statusMessage: String = "Tap microphone to speak"
     private var isListening: Boolean = false
@@ -284,6 +284,13 @@ class VoicePanelView(context: Context) : LinearLayout(context) {
                 voiceLocale = localeCode
                 startListeningIfPermitted()
             }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus && visibility == VISIBLE && !isListening && hasRecordPermission()) {
+            buildUi()
         }
     }
 

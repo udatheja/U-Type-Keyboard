@@ -21,11 +21,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -59,25 +58,17 @@ fun AppearanceScreen(
                 .widthIn(max = 640.dp)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                text = "Appearance & Layout",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-
-            // Live Interactive Mini-Keyboard Preview
+            // Live Mini-Keyboard Preview
             MiniKeyboardPreview(settings = settings, palette = previewPalette)
 
             // Theme Picker
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -85,12 +76,12 @@ fun AppearanceScreen(
                 ) {
                     Text(
                         text = "Keyboard Theme",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         KeyboardThemeId.entries.forEach { theme ->
                             val selected = settings.themeId == theme
@@ -98,15 +89,19 @@ fun AppearanceScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(
-                                        if (selected) MaterialTheme.colorScheme.primaryContainer
+                                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
                                         else MaterialTheme.colorScheme.surfaceVariant
                                     )
-                                    .border(
-                                        width = if (selected) 1.5.dp else 1.dp,
-                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                        shape = RoundedCornerShape(14.dp),
+                                    .then(
+                                        if (selected) {
+                                            Modifier.border(
+                                                1.2.dp,
+                                                MaterialTheme.colorScheme.primary,
+                                                RoundedCornerShape(12.dp),
+                                            )
+                                        } else Modifier
                                     )
                                     .clickable { viewModel.setTheme(theme) }
                                     .padding(horizontal = 12.dp, vertical = 10.dp)
@@ -114,14 +109,14 @@ fun AppearanceScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(14.dp)
                                         .clip(CircleShape)
                                         .background(Color(theme.previewSwatchHex))
                                 )
                                 Text(
                                     text = theme.displayName,
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                         }
@@ -130,27 +125,25 @@ fun AppearanceScreen(
             }
 
             // Key Dimensions & Geometry Sliders
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        text = "Key Dimensions & Spacing",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = "Key Size & Spacing",
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
 
                     SettingSliderRow(
                         label = "Key Height",
                         value = settings.keyHeightDp,
-                        range = 42f..64f,
+                        range = 42f..66f,
                         unit = "dp",
                         tag = "key_height_slider",
                         onChange = { viewModel.setKeyHeight(it) },
@@ -172,7 +165,7 @@ fun AppearanceScreen(
                         onChange = { viewModel.setVerticalGap(it) },
                     )
                     SettingSliderRow(
-                        label = "Key Corner Roundness",
+                        label = "Key Roundness",
                         value = settings.keyCornerRadiusDp,
                         range = 4f..20f,
                         unit = "dp",
@@ -191,12 +184,10 @@ fun AppearanceScreen(
             }
 
             // One-Handed Mode
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -204,11 +195,11 @@ fun AppearanceScreen(
                 ) {
                     Text(
                         text = "One-Handed Mode",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "Compact the keys to the left or right edge for effortless thumb typing.",
+                        text = "Shift keys left or right for comfortable one-thumb typing.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -238,11 +229,10 @@ private fun MiniKeyboardPreview(
     val keyColor = Color(palette.keyBg)
     val keyTextColor = Color(palette.keyText)
     val hintColor = Color(palette.hintText)
-    val accentColor = Color(palette.accent)
-    val corner = (settings.keyCornerRadiusDp * 0.7f).dp
+    val corner = (settings.keyCornerRadiusDp * 0.72f).dp
     val hGap = (settings.keyHorizontalGapDp * 0.65f).dp
     val vGap = (settings.keyVerticalGapDp * 0.65f).dp
-    val keyH = (settings.keyHeightDp * 0.68f).dp
+    val keyH = (settings.keyHeightDp * 0.72f).dp
 
     val fraction = if (settings.oneHandedMode == OneHandedMode.OFF) 1f else 0.84f
     val align = when (settings.oneHandedMode) {
@@ -254,25 +244,23 @@ private fun MiniKeyboardPreview(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(bgColor)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
+            .clip(RoundedCornerShape(16.dp))
+            .background(bgColor),
     ) {
-        // Mini 7-icon tool strip
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(stripColor)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            listOf("U", "🔒", "文A", "✎", "A", "📋", "🎙").forEachIndexed { idx, glyph ->
+            listOf("U", "🔒", "文A", "✎", "A", "📋", "🎙").forEach { glyph ->
                 Text(
                     text = glyph,
-                    color = if (idx == 0) accentColor else keyTextColor,
+                    color = keyTextColor,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                 )
             }
         }
@@ -317,7 +305,6 @@ private fun MiniKeyboardPreview(
                 }
             }
 
-            // Bottom row preview
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(hGap),
@@ -331,7 +318,11 @@ private fun MiniKeyboardPreview(
                         .clip(RoundedCornerShape(corner))
                         .background(keyColor),
                 ) {
-                    Text("සි", color = accentColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (settings.defaultLanguage.code == "si") "En" else "සි",
+                        color = keyTextColor,
+                        fontSize = 12.sp,
+                    )
                 }
                 Box(
                     contentAlignment = Alignment.Center,
@@ -344,19 +335,16 @@ private fun MiniKeyboardPreview(
                     Text(
                         text = settings.defaultLanguage.spaceLabel,
                         color = keyTextColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.sp,
                     )
                 }
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .weight(1.3f)
-                        .height(keyH)
-                        .clip(RoundedCornerShape(corner))
-                        .background(accentColor),
+                        .height(keyH),
                 ) {
-                    Text("↵", color = Color(palette.onAccent), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("✓", color = keyTextColor, fontSize = 15.sp)
                 }
             }
 
@@ -381,13 +369,13 @@ private fun SettingSliderRow(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = "${value.roundToInt()} $unit",
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Slider(

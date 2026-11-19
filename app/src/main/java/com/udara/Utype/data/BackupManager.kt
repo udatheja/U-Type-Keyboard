@@ -49,6 +49,7 @@ class BackupManager(
                 put("showNumberRow", settings.showNumberRow)
                 put("showHintCharacters", settings.showHintCharacters)
                 put("showSinhalaKeyHints", settings.showSinhalaKeyHints)
+                put("keyPreviewPopup", settings.keyPreviewPopup)
                 put("hapticFeedback", settings.hapticFeedback)
                 put("keySound", settings.keySound)
                 put("defaultLanguage", settings.defaultLanguage.code)
@@ -148,7 +149,14 @@ class BackupManager(
     }
 
     suspend fun importFromJson(jsonText: String): BackupSummary = withContext(Dispatchers.IO) {
-        val root = JSONObject(jsonText)
+        val trimmed = jsonText.trim()
+        require(trimmed.startsWith("{")) { "Invalid backup file format (expected JSON object)." }
+        val root = JSONObject(trimmed)
+        val hasKnownSection = root.has("settings") ||
+            root.has("shortcuts") ||
+            root.has("learnedWords") ||
+            root.has("pinnedClipboardItems")
+        require(hasKnownSection) { "This file is not a valid U Type backup." }
 
         root.optJSONObject("settings")?.let { s ->
             val current = settingsRepo.currentSettings()
@@ -163,6 +171,7 @@ class BackupManager(
                     showNumberRow = s.optBoolean("showNumberRow", current.showNumberRow),
                     showHintCharacters = s.optBoolean("showHintCharacters", current.showHintCharacters),
                     showSinhalaKeyHints = s.optBoolean("showSinhalaKeyHints", current.showSinhalaKeyHints),
+                    keyPreviewPopup = s.optBoolean("keyPreviewPopup", current.keyPreviewPopup),
                     hapticFeedback = s.optBoolean("hapticFeedback", current.hapticFeedback),
                     keySound = s.optBoolean("keySound", current.keySound),
                     defaultLanguage = LanguageMode.fromCode(s.optString("defaultLanguage", current.defaultLanguage.code)),
@@ -202,13 +211,15 @@ class BackupManager(
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
                 val word = obj.optString("word").trim()
-                val lang = obj.optString("language", "en")
+                val rawLang = obj.optString("language", "en")
+                val lang = LanguageMode.fromCode(rawLang).code
+                val freq = obj.optInt("frequency", 1).coerceAtLeast(1)
                 if (word.isNotEmpty()) {
                     db.learnedWordDao().upsert(
                         LearnedWordEntity(
                             word = word,
                             language = lang,
-                            frequency = obj.optInt("frequency", 1),
+                            frequency = freq,
                             lastUsedAt = obj.optLong("lastUsedAt", System.currentTimeMillis()),
                         )
                     )

@@ -135,4 +135,22 @@ class ClipboardExpiryTest {
         assertTrue("Newest clip must be kept", items.any { it.text == "clip #55" })
         assertTrue("Oldest unpinned clip #1 should be evicted", items.none { it.text == "clip #1" })
     }
+
+    @Test
+    fun recopyingUnpinnedItemResetsFreshCountdown() = runTest {
+        val id = repo.saveClip("re-copied text", retentionMillis = twoHoursMs)!!
+        repo.pinItem(id)
+        fakeNowMs += 3L * oneHourMs
+        repo.unpinItem(id) // unpinnedAt = 3h
+
+        // 1h 50m after unpinning (only 10m left), user copies the exact same text again
+        fakeNowMs += (twoHoursMs - 10L * 60_000L)
+        repo.saveClip("re-copied text", retentionMillis = twoHoursMs)
+
+        // Advance 30 minutes (would have expired under old unpinnedAt, but MUST still survive!)
+        fakeNowMs += 30L * 60_000L
+        val items = repo.getItems(twoHoursMs)
+        assertEquals("Re-copied unpinned clip must get a fresh 2h timer", 1, items.size)
+        assertEquals("re-copied text", items.first().text)
+    }
 }

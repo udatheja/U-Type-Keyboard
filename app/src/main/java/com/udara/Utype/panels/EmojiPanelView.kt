@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -18,12 +19,11 @@ import com.udara.Utype.engine.EmojiData
 import com.udara.Utype.engine.EmojiEntry
 
 /**
- * Reliable offline Emoji panel powered by bundled EmojiCompat.
- * Features:
- * - 10 category tabs (Recent, Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags)
- * - In-panel Search bar (switches to live search mode using U Type's keyboard below without stealing InputConnection focus!)
- * - Long-press skin-tone popup for skin-tone-capable emojis
- * - Back-to-ABC key and hold-to-repeat Backspace inside the panel.
+ * Reliable, spacious offline Emoji panel powered by bundled EmojiCompat.
+ * - Commits pure standard Unicode strings via commitText so emojis render identically across
+ *   WhatsApp, Instagram, Facebook, Messenger, TikTok, X, Telegram, SMS, and Notes.
+ * - 10 category tabs, live offline search, Fitzpatrick skin-tone long-press picker,
+ *   local Recents, ABC return button, and hold-to-repeat Backspace.
  */
 class EmojiPanelView(context: Context) : LinearLayout(context) {
 
@@ -36,7 +36,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
 
     var listener: Listener? = null
 
-    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.DARK, true)
+    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.CLASSIC_DARK, true)
     private var selectedCategory: EmojiCategory = EmojiCategory.SMILEYS
     private var recentEmojis: List<String> = emptyList()
     private var searchQuery: String = ""
@@ -100,7 +100,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         removeAllViews()
         setBackgroundColor(palette.background)
 
-        // 1. Search bar row
+        // 1. Clean search bar row
         val searchRow = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -111,27 +111,27 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
                 PanelUiUtils.dp(context, 10f),
                 PanelUiUtils.dp(context, 6f)
             )
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 44f))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 46f))
         }
 
         val searchBox = TextView(context).apply {
             text = when {
-                isSearchActive && searchQuery.isEmpty() -> "Type on keyboard to search emojis..."
+                isSearchActive && searchQuery.isEmpty() -> "Type to search emojis (e.g. heart, laugh, cricket)..."
                 isSearchActive -> "🔍  $searchQuery"
-                else -> "🔍  Search emojis..."
+                else -> "🔍  Search emojis"
             }
             gravity = Gravity.CENTER_VERTICAL
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTextColor(if (searchQuery.isNotEmpty()) palette.keyText else palette.hintText)
-            setPadding(PanelUiUtils.dp(context, 12f), 0, PanelUiUtils.dp(context, 12f), 0)
+            setPadding(PanelUiUtils.dp(context, 14f), 0, PanelUiUtils.dp(context, 14f), 0)
             background = PanelUiUtils.roundedKeyBackground(
                 context = context,
-                fillColor = palette.keyBg,
-                cornerDp = 16f,
-                strokeColor = if (isSearchActive) palette.accent else null,
-                strokeDp = 1.2f,
+                fillColor = palette.specialKeyBg,
+                cornerDp = 18f,
+                strokeColor = if (isSearchActive) palette.divider else null,
+                strokeDp = 1f,
             )
-            layoutParams = LayoutParams(0, PanelUiUtils.dp(context, 32f), 1f)
+            layoutParams = LayoutParams(0, PanelUiUtils.dp(context, 34f), 1f)
             setOnClickListener {
                 if (!isSearchActive) {
                     isSearchActive = true
@@ -143,26 +143,25 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         searchRow.addView(searchBox)
 
         if (isSearchActive) {
-            val clearSearchBtn = TextView(context).apply {
+            val doneBtn = TextView(context).apply {
                 text = "Done"
                 gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(palette.accent)
-                setPadding(PanelUiUtils.dp(context, 10f), 0, PanelUiUtils.dp(context, 6f), 0)
+                setTextColor(palette.keyText)
+                setPadding(PanelUiUtils.dp(context, 12f), 0, PanelUiUtils.dp(context, 6f), 0)
                 setOnClickListener { exitSearchMode() }
             }
-            searchRow.addView(clearSearchBtn)
+            searchRow.addView(doneBtn)
         }
         addView(searchRow)
 
         if (isSearchActive) {
-            // Compact horizontal strip of matching emojis so the QWERTY keyboard fits right underneath!
-            val matches = EmojiData.search(searchQuery).take(48)
+            val matches = EmojiData.search(searchQuery).take(60)
             val stripScroll = HorizontalScrollView(context).apply {
                 isHorizontalScrollBarEnabled = false
                 setBackgroundColor(palette.background)
-                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 52f))
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 54f))
             }
             val stripRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
@@ -172,7 +171,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
             if (matches.isEmpty()) {
                 stripRow.addView(
                     TextView(context).apply {
-                        text = "No emojis match \"$searchQuery\""
+                        text = "No emojis found for \"$searchQuery\""
                         setTextColor(palette.hintText)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
                         setPadding(PanelUiUtils.dp(context, 12f), 0, 0, 0)
@@ -180,7 +179,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
                 )
             } else {
                 matches.forEach { entry ->
-                    stripRow.addView(createEmojiCell(entry, PanelUiUtils.dp(context, 44f)))
+                    stripRow.addView(createEmojiCell(entry, PanelUiUtils.dp(context, 46f)))
                 }
             }
             stripScroll.addView(stripRow)
@@ -192,12 +191,12 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         val tabScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             setBackgroundColor(palette.toolStrip)
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 38f))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 40f))
         }
         val tabRow = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(PanelUiUtils.dp(context, 6f), 0, PanelUiUtils.dp(context, 6f), 0)
+            setPadding(PanelUiUtils.dp(context, 8f), 0, PanelUiUtils.dp(context, 8f), 0)
         }
         EmojiCategory.entries.forEach { category ->
             val selected = category == selectedCategory
@@ -205,12 +204,12 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
                 text = processEmoji(category.icon)
                 gravity = Gravity.CENTER
                 contentDescription = category.title
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                 alpha = if (selected) 1f else 0.55f
                 background = if (selected) {
-                    PanelUiUtils.roundedKeyBackground(context, palette.keyBg, 10f, palette.accent, 1.2f)
+                    PanelUiUtils.roundedKeyBackground(context, palette.keyBg, 10f)
                 } else null
-                layoutParams = LayoutParams(PanelUiUtils.dp(context, 38f), PanelUiUtils.dp(context, 32f)).apply {
+                layoutParams = LayoutParams(PanelUiUtils.dp(context, 42f), PanelUiUtils.dp(context, 34f)).apply {
                     marginEnd = PanelUiUtils.dp(context, 4f)
                 }
                 setOnClickListener {
@@ -223,7 +222,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         tabScroll.addView(tabRow)
         addView(tabScroll)
 
-        // 3. Emoji Grid
+        // 3. Spacious 7-column Emoji Grid
         val entries: List<EmojiEntry> = if (selectedCategory == EmojiCategory.RECENT) {
             recentEmojis.map { emoji ->
                 EmojiData.allEmojis.firstOrNull { it.emoji == emoji }
@@ -234,7 +233,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         }
 
         val scroll = ScrollView(context).apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 168f))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 194f))
         }
 
         val grid = LinearLayout(context).apply {
@@ -243,7 +242,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
                 PanelUiUtils.dp(context, 8f),
                 PanelUiUtils.dp(context, 6f),
                 PanelUiUtils.dp(context, 8f),
-                PanelUiUtils.dp(context, 8f)
+                PanelUiUtils.dp(context, 10f)
             )
         }
 
@@ -253,17 +252,17 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
                     text = "Recently used emojis will appear here."
                     gravity = Gravity.CENTER
                     setTextColor(palette.hintText)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
-                    setPadding(0, PanelUiUtils.dp(context, 48f), 0, 0)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setPadding(0, PanelUiUtils.dp(context, 56f), 0, 0)
                 }
             )
         } else {
-            val cols = 8
+            val cols = 7
             var i = 0
             while (i < entries.size) {
                 val row = LinearLayout(context).apply {
                     orientation = HORIZONTAL
-                    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 42f))
+                    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 46f))
                 }
                 for (c in 0 until cols) {
                     val entry = entries.getOrNull(i + c)
@@ -282,7 +281,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         scroll.addView(grid)
         addView(scroll)
 
-        // 4. Bottom footer bar: ABC (back) + Category label + Backspace (repeat)
+        // 4. Clean footer bar: ABC + Category title + Backspace (repeat)
         val footer = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -293,7 +292,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
                 PanelUiUtils.dp(context, 10f),
                 PanelUiUtils.dp(context, 8f)
             )
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 46f))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, PanelUiUtils.dp(context, 48f))
         }
 
         val abcBtn = TextView(context).apply {
@@ -303,7 +302,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTextColor(palette.keyText)
             background = PanelUiUtils.roundedKeyBackground(context, palette.keyBg, 10f)
-            layoutParams = LayoutParams(PanelUiUtils.dp(context, 62f), PanelUiUtils.dp(context, 34f))
+            layoutParams = LayoutParams(PanelUiUtils.dp(context, 64f), PanelUiUtils.dp(context, 36f))
             setOnClickListener { listener?.onClosePanel() }
         }
         footer.addView(abcBtn)
@@ -311,19 +310,19 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         val catTitle = TextView(context).apply {
             text = selectedCategory.title
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(palette.hintText)
             layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
         }
         footer.addView(catTitle)
 
         val backspaceBtn = TextView(context).apply {
-            text = "⌫"
+            text = "←"
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             setTextColor(palette.keyText)
             background = PanelUiUtils.roundedKeyBackground(context, palette.keyBg, 10f)
-            layoutParams = LayoutParams(PanelUiUtils.dp(context, 56f), PanelUiUtils.dp(context, 34f))
+            layoutParams = LayoutParams(PanelUiUtils.dp(context, 58f), PanelUiUtils.dp(context, 36f))
         }
         PanelUiUtils.attachHoldRepeat(backspaceBtn, { listener?.onBackspace() })
         footer.addView(backspaceBtn)
@@ -335,7 +334,7 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         return TextView(context).apply {
             text = processEmoji(entry.emoji)
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 25f)
             layoutParams = if (weight > 0f) {
                 LayoutParams(0, LayoutParams.MATCH_PARENT, weight)
             } else {
@@ -353,13 +352,13 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
         }
     }
 
-    private fun showSkinTonePopup(anchor: android.view.View, baseEmoji: String) {
+    private fun showSkinTonePopup(anchor: View, baseEmoji: String) {
         dismissSkinTonePopup()
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
             val p = PanelUiUtils.dp(context, 6f)
             setPadding(p, p, p, p)
-            background = PanelUiUtils.roundedKeyBackground(context, palette.popupBg, 14f, palette.accent, 1.2f)
+            background = PanelUiUtils.roundedKeyBackground(context, palette.popupBg, 14f, palette.divider, 1f)
         }
 
         EmojiData.skinToneModifiers.forEach { mod ->
@@ -367,8 +366,8 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
             val cell = TextView(context).apply {
                 text = processEmoji(variant)
                 gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
-                layoutParams = LayoutParams(PanelUiUtils.dp(context, 42f), PanelUiUtils.dp(context, 42f))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 25f)
+                layoutParams = LayoutParams(PanelUiUtils.dp(context, 44f), PanelUiUtils.dp(context, 44f))
                 setOnClickListener {
                     dismissSkinTonePopup()
                     listener?.onEmojiSelected(variant)
@@ -387,8 +386,17 @@ class EmojiPanelView(context: Context) : LinearLayout(context) {
             elevation = PanelUiUtils.dpF(context, 10f)
         }
         skinTonePopup = popup
+        val cellW = PanelUiUtils.dp(context, 44f)
+        val totalPopupW = EmojiData.skinToneModifiers.size * cellW + PanelUiUtils.dp(context, 12f)
+        val totalPopupH = cellW + PanelUiUtils.dp(context, 12f)
+        val loc = IntArray(2)
+        anchor.getLocationInWindow(loc)
+        val margin = PanelUiUtils.dp(context, 6f)
+        val maxX = (width - totalPopupW - margin).coerceAtLeast(margin)
+        val x = (loc[0] + anchor.width / 2 - totalPopupW / 2).coerceIn(margin, maxX)
+        val y = (loc[1] - totalPopupH - PanelUiUtils.dp(context, 8f)).coerceAtLeast(margin)
         try {
-            popup.showAsDropDown(anchor, -PanelUiUtils.dp(context, 80f), -PanelUiUtils.dp(context, 96f))
+            popup.showAtLocation(this, Gravity.NO_GRAVITY, x, y)
         } catch (_: Exception) {
         }
     }

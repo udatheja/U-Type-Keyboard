@@ -30,7 +30,7 @@ class ClipboardPanelView(context: Context) : LinearLayout(context) {
 
     var listener: Listener? = null
 
-    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.DARK, true)
+    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.CLASSIC_DARK, true)
     private var items: List<ClipboardItem> = emptyList()
     private var timeLeftFormatter: (ClipboardItem) -> String = { "" }
     private var statusBanner: String? = null
@@ -211,7 +211,7 @@ class ClipboardPanelView(context: Context) : LinearLayout(context) {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
                 contentDescription = if (item.isPinned) "Unpin item" else "Pin item"
                 alpha = if (item.isPinned) 1f else 0.65f
-                layoutParams = LayoutParams(PanelUiUtils.dp(context, 38f), PanelUiUtils.dp(context, 38f))
+                layoutParams = LayoutParams(PanelUiUtils.dp(context, 48f), PanelUiUtils.dp(context, 48f))
                 setOnClickListener { listener?.onTogglePin(item) }
             }
             addView(pinBtn)
@@ -222,7 +222,7 @@ class ClipboardPanelView(context: Context) : LinearLayout(context) {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 setTextColor(palette.hintText)
                 contentDescription = "Delete item"
-                layoutParams = LayoutParams(PanelUiUtils.dp(context, 36f), PanelUiUtils.dp(context, 38f))
+                layoutParams = LayoutParams(PanelUiUtils.dp(context, 48f), PanelUiUtils.dp(context, 48f))
                 setOnClickListener { listener?.onDeleteItem(item) }
             }
             addView(delBtn)

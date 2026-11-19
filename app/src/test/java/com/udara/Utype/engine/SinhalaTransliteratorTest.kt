@@ -172,4 +172,36 @@ class SinhalaTransliteratorTest {
         // Once buffer is empty, returns null so IME deletes committed Sinhala characters
         assertNull(buffer.backspace())
     }
+
+    @Test
+    fun testUppercaseNonCollidingLettersAndStandaloneC() {
+        val cases = listOf(
+            "Mama" to "මම",
+            "Kandy" to "කන්ඩ්ය්",
+            "Galle" to "ගල්ලෙ",
+            "Oyaa" to "ඔයා",
+            "Eka" to "එක",
+            "Ithin" to "ඉතින්",
+            "Udara" to "උඩර",
+            "Wathura" to "වතුර",
+            "ca" to "ච",
+            "Ca" to "ච",
+            "Cha" to "ච",
+            "Chha" to "ඡ",
+            // Case-sensitive Sinhala letters MUST remain untouched!
+            "A" to "ඇ",
+            "Aa" to "ඈ",
+            "Ta" to "ඨ",
+            "Da" to "ඪ",
+            "Na" to "ණ",
+            "La" to "ළ",
+            "Sa" to "ෂ",
+            "Ba" to "ඹ",
+            "kaH" to "කඃ",
+            "kaX" to "කඞ",
+        )
+        cases.forEach { (input, expected) ->
+            assertEquals("Uppercase/C rule '$input'", expected, SinhalaTransliterator.transliterate(input))
+        }
+    }
 }

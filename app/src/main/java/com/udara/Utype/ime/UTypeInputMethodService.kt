@@ -16,7 +16,11 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
+import android.view.inputmethod.InputConnection
 import android.widget.LinearLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.MainActivity
 import com.udara.Utype.UTypeApplication
 import com.udara.Utype.data.ClipboardItem
@@ -43,6 +47,7 @@ import com.udara.Utype.views.KeyboardCanvasView
 import com.udara.Utype.views.TopStripView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
@@ -73,7 +78,7 @@ class UTypeInputMethodService : InputMethodService() {
     private lateinit var voicePanel: VoicePanelView
 
     private var settings: KeyboardSettings = KeyboardSettings()
-    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.DARK, true)
+    private var palette: KeyboardPalette = KeyboardThemeId.resolvePalette(KeyboardThemeId.CLASSIC_DARK, true)
 
     private var activePanel: ActivePanel = ActivePanel.KEYBOARD
     private var layoutMode: LayoutMode = LayoutMode.ALPHA
@@ -84,7 +89,18 @@ class UTypeInputMethodService : InputMethodService() {
     private var isIncognito: Boolean = false
     private var isPasswordField: Boolean = false
     private var currentImeAction: Int = EditorInfo.IME_ACTION_UNSPECIFIED
+    private var currentNoEnterAction: Boolean = false
     private var currentHostPackage: String? = null
+    private var lastHostPackage: String? = null
+
+    /**
+     * Monotonic generation incremented on every explicit user language toggle ("සි" / "En" / "文A").
+     * Guarantees that any in-flight async DataStore read from `onStartInputView` can NEVER overwrite
+     * a language selection made by the user.
+     */
+    private var languageChangeGeneration: Long = 0L
+    private var languageRestoreJob: Job? = null
+    private var maintenanceJob: Job? = null
 
     private val sinhalaBuffer = SinhalaTransliterator.ComposingBuffer()
     private val englishBuffer = StringBuilder()
@@ -94,10 +110,32 @@ class UTypeInputMethodService : InputMethodService() {
     private var justCommittedWordForDoubleSpace: Boolean = false
     private var selectionAnchorPos: Int? = null
 
+    /** Optional override used strictly in Robolectric unit tests where Android's Window/Binder IC is absent. */
+    internal var testInputConnectionOverride: InputConnection? = null
+    internal var testEditorInfoOverride: EditorInfo? = null
+
+    private val activeInputConnection: InputConnection?
+        get() = testInputConnectionOverride ?: currentInputConnection
+
+    private val activeEditorInfo: EditorInfo?
+        get() = testEditorInfoOverride ?: currentInputEditorInfo
+
     private var clipboardManager: ClipboardManager? = null
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         captureSystemClipboard()
     }
+
+    // Internal test inspection helpers
+    internal val currentLanguageModeForTest: LanguageMode get() = languageMode
+    internal val currentLayoutModeForTest: LayoutMode get() = layoutMode
+    internal val currentShiftStateForTest: ShiftState get() = shiftState
+    internal val isIncognitoForTest: Boolean get() = isIncognito
+    internal val activePanelNameForTest: String get() = activePanel.name
+    internal val keyboardViewForTest: KeyboardCanvasView get() = keyboardView
+    internal val rootContainerForTest: LinearLayout get() = rootContainer
+    internal val topStripViewForTest: TopStripView get() = topStripView
+    internal fun dispatchKeyActionForTest(action: KeyAction) = handleKeyAction(action)
+    internal fun dispatchToolActionForTest(action: TopStripView.ToolAction) = handleToolStripAction(action)
 
     override fun onCreate() {
         super.onCreate()
@@ -108,7 +146,7 @@ class UTypeInputMethodService : InputMethodService() {
             app.suggestionEngine.initialize()
         }
 
-        // Observe settings changes reactively
+        // Observe distinct settings changes reactively (never touches user-toggled languageMode)
         serviceScope.launch {
             app.settingsRepository.settingsFlow.collectLatest { updated ->
                 settings = updated
@@ -126,6 +164,8 @@ class UTypeInputMethodService : InputMethodService() {
 
     override fun onDestroy() {
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
+        languageRestoreJob?.cancel()
+        maintenanceJob?.cancel()
         if (::voicePanel.isInitialized) {
             voicePanel.stopAndRelease()
         }
@@ -139,7 +179,25 @@ class UTypeInputMethodService : InputMethodService() {
         rootContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(palette.background)
+            clipToPadding = false
         }
+
+        // Critical for Android 15/16 edge-to-edge IME windows: pad rootContainer by the real
+        // system navigation bar & display cutout insets so Android's bottom-left hide chevron (⌄),
+        // gesture pill, and bottom-right IME switcher (⌨) NEVER overlap the bottom row of keys
+        // or the Text Editor / Clipboard / Emoji / Fonts / Voice panels.
+        ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { view, insets ->
+            applyInsetsToRoot(view, insets)
+            insets
+        }
+        rootContainer.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                ViewCompat.requestApplyInsets(v)
+                syncInsetsFromDecorFallback()
+                syncSystemNavigationBarAppearance()
+            }
+            override fun onViewDetachedFromWindow(v: View) = Unit
+        })
 
         topStripView = TopStripView(this).apply {
             listener = object : TopStripView.Listener {
@@ -208,7 +266,7 @@ class UTypeInputMethodService : InputMethodService() {
                 override fun onPasteItem(item: ClipboardItem) {
                     performFeedback()
                     commitComposingBuffer()
-                    currentInputConnection?.commitText(item.text, 1)
+                    activeInputConnection?.commitText(item.text, 1)
                     switchPanel(ActivePanel.KEYBOARD)
                 }
 
@@ -249,7 +307,7 @@ class UTypeInputMethodService : InputMethodService() {
                 override fun onEmojiSelected(emoji: String) {
                     performFeedback()
                     commitComposingBuffer()
-                    currentInputConnection?.commitText(emoji, 1)
+                    activeInputConnection?.commitText(emoji, 1)
                     if (!isIncognito && !isPasswordField) {
                         serviceScope.launch(Dispatchers.IO) {
                             app.database.recentEmojiDao().upsert(RecentEmojiEntity(emoji, System.currentTimeMillis()))
@@ -285,7 +343,7 @@ class UTypeInputMethodService : InputMethodService() {
             listener = object : VoicePanelView.Listener {
                 override fun onVoiceResult(text: String) {
                     commitComposingBuffer()
-                    currentInputConnection?.commitText(text, 1)
+                    activeInputConnection?.commitText(text, 1)
                 }
 
                 override fun onClosePanel() {
@@ -304,7 +362,56 @@ class UTypeInputMethodService : InputMethodService() {
         rootContainer.addView(keyboardView)
 
         refreshAllViews()
+        syncSystemNavigationBarAppearance()
         return rootContainer
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        if (::rootContainer.isInitialized) {
+            ViewCompat.requestApplyInsets(rootContainer)
+            syncInsetsFromDecorFallback()
+            syncSystemNavigationBarAppearance()
+            rootContainer.post {
+                if (::rootContainer.isInitialized) {
+                    ViewCompat.requestApplyInsets(rootContainer)
+                    syncInsetsFromDecorFallback()
+                }
+            }
+        }
+    }
+
+    private fun applyInsetsToRoot(view: View, insets: WindowInsetsCompat) {
+        val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+        val sysGestures = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+        val cutouts = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+        val leftInset = maxOf(navBars.left, cutouts.left)
+        val rightInset = maxOf(navBars.right, cutouts.right)
+        val bottomInset = maxOf(navBars.bottom, sysGestures.bottom)
+        if (view.paddingLeft != leftInset ||
+            view.paddingRight != rightInset ||
+            view.paddingBottom != bottomInset
+        ) {
+            view.setPadding(leftInset, 0, rightInset, bottomInset)
+        }
+    }
+
+    private fun syncInsetsFromDecorFallback() {
+        if (!::rootContainer.isInitialized) return
+        val insets = ViewCompat.getRootWindowInsets(rootContainer)
+            ?: window?.window?.decorView?.let { ViewCompat.getRootWindowInsets(it) }
+            ?: return
+        applyInsetsToRoot(rootContainer, insets)
+    }
+
+    private fun syncSystemNavigationBarAppearance() {
+        val win = window?.window ?: return
+        try {
+            @Suppress("DEPRECATION")
+            win.navigationBarColor = palette.background
+            WindowInsetsControllerCompat(win, win.decorView).isAppearanceLightNavigationBars = !palette.isDark
+        } catch (_: Exception) {
+        }
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -317,10 +424,17 @@ class UTypeInputMethodService : InputMethodService() {
         val inputType = info?.inputType ?: 0
         val inputClass = inputType and InputType.TYPE_MASK_CLASS
         val variation = inputType and InputType.TYPE_MASK_VARIATION
+        val imeOptions = info?.imeOptions ?: 0
 
         isPasswordField = isPasswordInputType(inputClass, variation)
-        currentImeAction = (info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
-        currentHostPackage = info?.packageName
+        currentImeAction = imeOptions and EditorInfo.IME_MASK_ACTION
+        val isMultiLine = (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+        currentNoEnterAction = isMultiLine || (imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+
+        val newHostPackage = info?.packageName
+        val sameHostRestart = restarting && newHostPackage == lastHostPackage
+        currentHostPackage = newHostPackage
+        lastHostPackage = newHostPackage
 
         layoutMode = when {
             inputClass == InputType.TYPE_CLASS_NUMBER ||
@@ -336,23 +450,88 @@ class UTypeInputMethodService : InputMethodService() {
             keyboardView.isPasswordField = isPasswordField
         }
 
-        // Refresh language remembered per app + run clipboard cleanup whenever keyboard opens
-        serviceScope.launch {
-            val savedLang = if (isPasswordField || layoutMode == LayoutMode.EMAIL) {
-                LanguageMode.ENGLISH
+        // Cancel any previous async language restoration so it can never stomp newer state
+        languageRestoreJob?.cancel()
+
+        // 1. Resolve language deterministically without race conditions:
+        if (isPasswordField || layoutMode == LayoutMode.EMAIL) {
+            languageMode = LanguageMode.ENGLISH
+        } else if (!sameHostRestart) {
+            // Fast synchronous in-memory cache check prevents any flicker or switch-back race
+            val cached = app.settingsRepository.getCachedLanguageForApp(currentHostPackage)
+            if (cached != null) {
+                languageMode = cached
             } else {
-                app.settingsRepository.getLanguageForApp(currentHostPackage) ?: settings.defaultLanguage
+                languageMode = settings.defaultLanguage
+                val genAtStart = languageChangeGeneration
+                val targetPkg = currentHostPackage
+                languageRestoreJob = serviceScope.launch {
+                    val persisted = app.settingsRepository.getLanguageForApp(targetPkg)
+                    // Strict generation guard: if the user pressed "සි"/"En" while disk read was running,
+                    // NEVER overwrite their choice!
+                    if (persisted != null &&
+                        languageChangeGeneration == genAtStart &&
+                        targetPkg == currentHostPackage &&
+                        languageMode != persisted
+                    ) {
+                        languageMode = persisted
+                        updateAutoCapitalization()
+                        if (::rootContainer.isInitialized) {
+                            refreshAllViews()
+                        }
+                    }
+                }
             }
-            languageMode = savedLang
+        }
+
+        // 2. Immediately bring up the keyboard synchronously on frame 1
+        if (::rootContainer.isInitialized) {
+            if (!sameHostRestart) {
+                switchPanel(ActivePanel.KEYBOARD)
+            } else {
+                refreshAllViews()
+            }
+            updateAutoCapitalization()
+        }
+
+        // 3. Background maintenance (clipboard expiry + suggestions refresh) — NEVER mutates languageMode/panel
+        maintenanceJob?.cancel()
+        maintenanceJob = serviceScope.launch {
             app.clipboardRepository.cleanupExpired(settings.clipboardDuration.millis)
             app.suggestionEngine.refreshDynamicData()
+        }
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        val hasComposing = !sinhalaBuffer.isEmpty || englishBuffer.isNotEmpty()
+        if (hasComposing) {
+            val cursorLeftComposing = (candidatesStart == -1 && candidatesEnd == -1) ||
+                newSelStart != candidatesEnd ||
+                newSelEnd != candidatesEnd
+            if (cursorLeftComposing && (newSelStart != oldSelStart || newSelEnd != oldSelEnd)) {
+                sinhalaBuffer.clear()
+                englishBuffer.setLength(0)
+                activeInputConnection?.finishComposingText()
+                if (::topStripView.isInitialized) {
+                    topStripView.showTools()
+                }
+            }
+        }
+        if (newSelStart == newSelEnd && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
             updateAutoCapitalization()
-            switchPanel(ActivePanel.KEYBOARD)
-            refreshAllViews()
         }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        languageRestoreJob?.cancel()
         commitComposingBuffer()
         if (::keyboardView.isInitialized) {
             keyboardView.dismissPreviewPopup()
@@ -379,7 +558,9 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun refreshAllViews() {
+        if (!::rootContainer.isInitialized) return
         rootContainer.setBackgroundColor(palette.background)
+        syncSystemNavigationBarAppearance()
         topStripView.applyTheme(palette)
         topStripView.updateStates(
             incognito = isIncognito,
@@ -395,6 +576,7 @@ class UTypeInputMethodService : InputMethodService() {
             showHints = settings.showHintCharacters,
             showSinhalaHints = settings.showSinhalaKeyHints,
             imeAction = currentImeAction,
+            noEnterAction = currentNoEnterAction,
         )
         keyboardView.updateState(rows, settings, palette, shiftState)
     }
@@ -428,7 +610,7 @@ class UTypeInputMethodService : InputMethodService() {
             }
             ActivePanel.STYLISH_FONTS -> {
                 commitComposingBuffer()
-                val selected = currentInputConnection?.getSelectedText(0)?.toString()
+                val selected = activeInputConnection?.getSelectedText(0)?.toString()
                 stylishFontsPanel.update(palette, activeFontStyle, !selected.isNullOrEmpty())
             }
             ActivePanel.CLIPBOARD -> {
@@ -453,8 +635,14 @@ class UTypeInputMethodService : InputMethodService() {
     private fun handleToolStripAction(action: TopStripView.ToolAction) {
         when (action) {
             TopStripView.ToolAction.THEME_SETTINGS -> {
+                requestHideSelf(0)
                 val intent = Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+                    putExtra(MainActivity.EXTRA_OPEN_DESTINATION, MainActivity.DEST_THEMES)
                 }
                 startActivity(intent)
             }
@@ -474,14 +662,30 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun toggleLanguage() {
+        // Password fields stay strictly in English so hidden passwords are never transliterated unexpectedly
+        if (isPasswordField) {
+            languageMode = LanguageMode.ENGLISH
+            refreshAllViews()
+            return
+        }
+        // Cancel any pending async language restore from onStartInputView and bump generation
+        languageRestoreJob?.cancel()
+        languageChangeGeneration++
+
         commitComposingBuffer()
-        languageMode = languageMode.toggled()
+        val nextMode = languageMode.toggled()
+        languageMode = nextMode
         if (layoutMode != LayoutMode.ALPHA) {
             layoutMode = LayoutMode.ALPHA
         }
+
+        // Update synchronous in-memory cache immediately BEFORE async DataStore write
+        val targetPkg = currentHostPackage
+        app.settingsRepository.cacheLanguageForApp(targetPkg, nextMode)
         serviceScope.launch {
-            app.settingsRepository.setLanguageForApp(currentHostPackage, languageMode)
+            app.settingsRepository.setLanguageForApp(targetPkg, nextMode)
         }
+
         updateAutoCapitalization()
         refreshAllViews()
     }
@@ -490,7 +694,14 @@ class UTypeInputMethodService : InputMethodService() {
         // Route keystrokes to Emoji Search when search mode is active
         if (activePanel == ActivePanel.EMOJI && emojiPanel.isSearching()) {
             when (action) {
-                is KeyAction.Text -> emojiPanel.appendSearchChar(action.text)
+                is KeyAction.Text -> {
+                    emojiPanel.appendSearchChar(action.text)
+                    if (shiftState == ShiftState.ONCE) {
+                        shiftState = ShiftState.OFF
+                        refreshAllViews()
+                    }
+                }
+                KeyAction.Shift -> handleShiftTap()
                 KeyAction.Space -> emojiPanel.appendSearchChar(" ")
                 KeyAction.Backspace -> emojiPanel.backspaceSearchChar()
                 KeyAction.Enter -> emojiPanel.exitSearchMode()
@@ -499,14 +710,12 @@ class UTypeInputMethodService : InputMethodService() {
             return
         }
 
-        val ic = currentInputConnection ?: return
-
+        // Language switch & layout navigation must work even if InputConnection is temporarily null
         when (action) {
-            is KeyAction.Text -> handleTextInput(action.text)
-            KeyAction.Shift -> handleShiftTap()
-            KeyAction.Backspace -> handleBackspace()
-            KeyAction.Space -> handleSpace()
-            KeyAction.Enter -> handleEnter()
+            KeyAction.LanguageSwitch -> {
+                toggleLanguage()
+                return
+            }
             KeyAction.SymbolsToggle -> {
                 commitComposingBuffer()
                 layoutMode = if (layoutMode == LayoutMode.ALPHA || layoutMode == LayoutMode.EMAIL) {
@@ -515,6 +724,7 @@ class UTypeInputMethodService : InputMethodService() {
                     LayoutMode.ALPHA
                 }
                 refreshAllViews()
+                return
             }
             KeyAction.SymbolsMore -> {
                 layoutMode = if (layoutMode == LayoutMode.SYMBOLS_1) {
@@ -523,9 +733,31 @@ class UTypeInputMethodService : InputMethodService() {
                     LayoutMode.SYMBOLS_1
                 }
                 refreshAllViews()
+                return
             }
-            KeyAction.Emoji -> switchPanel(ActivePanel.EMOJI)
-            KeyAction.LanguageSwitch -> toggleLanguage()
+            KeyAction.Emoji -> {
+                switchPanel(ActivePanel.EMOJI)
+                return
+            }
+            KeyAction.Shift -> {
+                handleShiftTap()
+                return
+            }
+            else -> {}
+        }
+
+        activeInputConnection ?: return
+
+        when (action) {
+            is KeyAction.Text -> handleTextInput(action.text)
+            KeyAction.Backspace -> handleBackspace()
+            KeyAction.Space -> handleSpace()
+            KeyAction.Enter -> handleEnter()
+            KeyAction.LanguageSwitch,
+            KeyAction.SymbolsToggle,
+            KeyAction.SymbolsMore,
+            KeyAction.Emoji,
+            KeyAction.Shift -> Unit
         }
     }
 
@@ -534,7 +766,7 @@ class UTypeInputMethodService : InputMethodService() {
             emojiPanel.appendSearchChar(text)
             return
         }
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         commitComposingBuffer()
         justCommittedWordForDoubleSpace = false
         val styled = if (languageMode == LanguageMode.ENGLISH && !isPasswordField) {
@@ -546,7 +778,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun handleTextInput(text: String) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         justCommittedWordForDoubleSpace = false
 
         val isSingleLetter = text.length == 1 && text[0].isLetter()
@@ -611,7 +843,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun handleBackspace() {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         justCommittedWordForDoubleSpace = false
 
         // In Sinhala mode, delete 1 typed Latin letter from composing buffer first!
@@ -644,50 +876,135 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun deleteBeforeCursor() {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val selected = ic.getSelectedText(0)
         if (!selected.isNullOrEmpty()) {
             ic.commitText("", 1)
             return
         }
-        val before = ic.getTextBeforeCursor(8, 0)?.toString()
+        val before = ic.getTextBeforeCursor(24, 0)?.toString()
         if (before.isNullOrEmpty()) {
             ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
             ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
             return
         }
-        // Handle surrogate pairs / emoji variation selectors cleanly
         val deleteCount = computeGraphemeDeleteLength(before)
         ic.deleteSurroundingText(deleteCount, 0)
     }
 
-    private fun computeGraphemeDeleteLength(text: String): Int {
-        if (text.isEmpty()) return 1
-        var i = text.length
-        val last = text[i - 1]
-        // Variation selector or skin tone modifier
-        if (last == '\uFE0F' && i >= 2) {
-            i--
-        }
-        if (i >= 2 && Character.isLowSurrogate(text[i - 1]) && Character.isHighSurrogate(text[i - 2])) {
-            i -= 2
-            // If preceded by a Fitzpatrick skin-tone or ZWJ sequence, keep stripping safely
-            if (i >= 1 && text[i - 1] == '\u200D') {
-                i--
-                if (i >= 2 && Character.isLowSurrogate(text[i - 1]) && Character.isHighSurrogate(text[i - 2])) {
-                    i -= 2
-                } else if (i >= 1) {
-                    i--
+    internal companion object {
+        private const val VARIATION_SELECTOR_16 = 0xFE0F
+        private const val VARIATION_SELECTOR_15 = 0xFE0E
+        private const val COMBINING_ENCLOSING_KEYCAP = 0x20E3
+        private const val ZWJ = 0x200D
+
+        private fun isSkinToneModifier(cp: Int): Boolean = cp in 0x1F3FB..0x1F3FF
+        private fun isRegionalIndicator(cp: Int): Boolean = cp in 0x1F1E6..0x1F1FF
+        private fun isTagChar(cp: Int): Boolean = cp in 0xE0020..0xE007F
+
+        /**
+         * Computes the exact UTF-16 char length of the trailing grapheme/emoji cluster so a single
+         * Backspace cleanly deletes complex emojis (🇱🇰 flags, 👍🏽 skin-tones, 👨‍👩‍👧‍👦 ZWJ families,
+         * ❤️‍🔥 ZWJ hearts, 1️⃣ keycaps) while deleting 1 Sinhala code unit at a time for editing.
+         */
+        internal fun computeGraphemeDeleteLength(text: String): Int {
+            if (text.isEmpty()) return 1
+            var idx = text.length
+
+            fun prevCodePoint(end: Int): Pair<Int, Int> {
+                val cp = Character.codePointBefore(text, end)
+                return cp to Character.charCount(cp)
+            }
+
+            val (lastCp, lastLen) = prevCodePoint(idx)
+
+            // 1. Keycap sequence: [0-9#*]\uFE0F?\u20E3
+            if (lastCp == COMBINING_ENCLOSING_KEYCAP) {
+                idx -= lastLen
+                if (idx > 0) {
+                    val (cp2, len2) = prevCodePoint(idx)
+                    if (cp2 == VARIATION_SELECTOR_16 || cp2 == VARIATION_SELECTOR_15) {
+                        idx -= len2
+                    }
+                }
+                if (idx > 0) {
+                    val (_, len3) = prevCodePoint(idx)
+                    idx -= len3
+                }
+                return (text.length - idx).coerceAtLeast(1)
+            }
+
+            // 2. Flag tag sequences (e.g. England/Scotland/Wales flags ending in U+E007F)
+            if (lastCp == 0xE007F) {
+                idx -= lastLen
+                while (idx > 0) {
+                    val (cp, len) = prevCodePoint(idx)
+                    idx -= len
+                    if (!isTagChar(cp)) break
+                }
+                return (text.length - idx).coerceAtLeast(1)
+            }
+
+            // 3. Regional Indicator flag pairs (e.g. 🇱🇰 = two regional indicator surrogate pairs)
+            if (isRegionalIndicator(lastCp)) {
+                idx -= lastLen
+                if (idx > 0) {
+                    val (cp2, len2) = prevCodePoint(idx)
+                    if (isRegionalIndicator(cp2)) {
+                        idx -= len2
+                    }
+                }
+                return (text.length - idx).coerceAtLeast(1)
+            }
+
+            // 4. General emoji / ZWJ / variation selector / skin-tone cluster loop
+            fun consumeSingleEmojiUnit(startEnd: Int): Int {
+                var pos = startEnd
+                if (pos <= 0) return pos
+                var (cp, len) = prevCodePoint(pos)
+                if (cp == VARIATION_SELECTOR_16 || cp == VARIATION_SELECTOR_15) {
+                    pos -= len
+                    if (pos <= 0) return pos
+                    val next = prevCodePoint(pos)
+                    cp = next.first
+                    len = next.second
+                }
+                if (isSkinToneModifier(cp)) {
+                    pos -= len
+                    if (pos <= 0) return pos
+                    val next = prevCodePoint(pos)
+                    cp = next.first
+                    len = next.second
+                    if (cp == VARIATION_SELECTOR_16 || cp == VARIATION_SELECTOR_15) {
+                        pos -= len
+                        if (pos <= 0) return pos
+                        val next2 = prevCodePoint(pos)
+                        cp = next2.first
+                        len = next2.second
+                    }
+                }
+                pos -= len
+                return pos
+            }
+
+            idx = consumeSingleEmojiUnit(idx)
+            // Keep consuming preceding ZWJ-joined emoji components (e.g. 👨‍👩‍👧‍👦, ❤️‍🔥, 👩‍💻)
+            while (idx > 0) {
+                val (cp, len) = prevCodePoint(idx)
+                if (cp == ZWJ) {
+                    idx -= len
+                    idx = consumeSingleEmojiUnit(idx)
+                } else {
+                    break
                 }
             }
-        } else {
-            i = (i - 1).coerceAtLeast(0)
+
+            return (text.length - idx).coerceAtLeast(1)
         }
-        return (text.length - i).coerceAtLeast(1)
     }
 
     private fun handleSpace() {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val now = SystemClock.uptimeMillis()
 
         // Check Text Shortcut expansion on space!
@@ -700,7 +1017,7 @@ class UTypeInputMethodService : InputMethodService() {
             sinhalaBuffer.clear()
             englishBuffer.setLength(0)
             ic.commitText("$shortcutExpansion ", 1)
-            topStripView.showTools()
+            if (::topStripView.isInitialized) topStripView.showTools()
             justCommittedWordForDoubleSpace = false
             updateAutoCapitalization()
             return
@@ -735,13 +1052,17 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun handleEnter() {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         commitComposingBuffer()
         justCommittedWordForDoubleSpace = false
 
         val action = currentImeAction
-        val multiLine = (currentInputEditorInfo?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
-        if (!multiLine && action in listOf(
+        val editorInfo = activeEditorInfo
+        val multiLine = ((editorInfo?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+        val noEnterAction = currentNoEnterAction ||
+            (((editorInfo?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0)
+
+        if (!multiLine && !noEnterAction && action in listOf(
                 EditorInfo.IME_ACTION_GO,
                 EditorInfo.IME_ACTION_SEARCH,
                 EditorInfo.IME_ACTION_SEND,
@@ -757,7 +1078,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun commitComposingBuffer() {
-        val ic = currentInputConnection
+        val ic = activeInputConnection
         if (!sinhalaBuffer.isEmpty) {
             val committed = sinhalaBuffer.sinhalaText
             sinhalaBuffer.clear()
@@ -776,14 +1097,14 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun applySuggestion(item: SuggestionItem) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         sinhalaBuffer.clear()
         englishBuffer.setLength(0)
         ic.commitText("${item.text} ", 1)
         if (!item.isShortcut) {
             maybeLearnWord(item.text, languageMode)
         }
-        topStripView.showTools()
+        if (::topStripView.isInitialized) topStripView.showTools()
         justCommittedWordForDoubleSpace = false
         updateAutoCapitalization()
     }
@@ -840,7 +1161,7 @@ class UTypeInputMethodService : InputMethodService() {
             }
             return
         }
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val before = ic.getTextBeforeCursor(3, 0)?.toString().orEmpty()
         val shouldCap = before.isEmpty() ||
             before.endsWith("\n") ||
@@ -856,7 +1177,7 @@ class UTypeInputMethodService : InputMethodService() {
 
     private fun handleStylishFontSelection(style: StylishFontStyle) {
         activeFontStyle = style
-        val ic = currentInputConnection
+        val ic = activeInputConnection
         val selected = ic?.getSelectedText(0)?.toString()
         if (ic != null && !selected.isNullOrEmpty()) {
             val converted = StylishFontEngine.transform(selected, style)
@@ -866,7 +1187,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun handleTextEditorAction(action: TextEditorPanelView.EditorAction, selecting: Boolean) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         when (action) {
             TextEditorPanelView.EditorAction.TOGGLE_SELECT -> {
                 if (selecting) {
@@ -902,7 +1223,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun moveCursorHorizontal(delta: Int, selecting: Boolean) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)
         if (extracted != null && extracted.text != null) {
             val textLen = extracted.text.length
@@ -926,7 +1247,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun moveCursorLineEdge(toStart: Boolean, selecting: Boolean) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)
         if (extracted != null && extracted.text != null) {
             val text = extracted.text.toString()
@@ -960,7 +1281,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun sendDpadKey(keyCode: Int, withShift: Boolean) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val now = SystemClock.uptimeMillis()
         val meta = if (withShift) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0
         ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
@@ -968,7 +1289,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun sendMetaKey(keyCode: Int, metaState: Int) {
-        val ic = currentInputConnection ?: return
+        val ic = activeInputConnection ?: return
         val now = SystemClock.uptimeMillis()
         ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, metaState))
         ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, metaState))
