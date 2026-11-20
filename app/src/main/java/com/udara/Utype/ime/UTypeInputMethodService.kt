@@ -834,7 +834,7 @@ class UTypeInputMethodService : InputMethodService() {
         shiftState = when (shiftState) {
             ShiftState.OFF -> ShiftState.ONCE
             ShiftState.ONCE -> {
-                if (now - lastShiftTapMs <= 350L) ShiftState.CAPS_LOCK else ShiftState.OFF
+                if (lastShiftTapMs > 0L && now - lastShiftTapMs <= 350L) ShiftState.CAPS_LOCK else ShiftState.OFF
             }
             ShiftState.CAPS_LOCK -> ShiftState.OFF
         }
