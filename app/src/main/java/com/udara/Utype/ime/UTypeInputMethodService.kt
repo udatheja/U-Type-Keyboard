@@ -34,6 +34,7 @@ import com.udara.Utype.engine.SinhalaTransliterator
 import com.udara.Utype.engine.StylishFontEngine
 import com.udara.Utype.engine.StylishFontStyle
 import com.udara.Utype.engine.SuggestionItem
+import com.udara.Utype.engine.SuggestionOptions
 import com.udara.Utype.layouts.KeyAction
 import com.udara.Utype.layouts.KeyboardLayouts
 import com.udara.Utype.layouts.LayoutMode
@@ -50,6 +51,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,6 +90,8 @@ class UTypeInputMethodService : InputMethodService() {
 
     private var isIncognito: Boolean = false
     private var isPasswordField: Boolean = false
+    private var isSensitiveField: Boolean = false
+    private var noPersonalizedLearning: Boolean = false
     private var currentImeAction: Int = EditorInfo.IME_ACTION_UNSPECIFIED
     private var currentNoEnterAction: Boolean = false
     private var currentHostPackage: String? = null
@@ -101,6 +105,16 @@ class UTypeInputMethodService : InputMethodService() {
     private var languageChangeGeneration: Long = 0L
     private var languageRestoreJob: Job? = null
     private var maintenanceJob: Job? = null
+    private var suggestionJob: Job? = null
+
+    private data class LastAutoCorrection(
+        val originalWord: String,
+        val correctedWord: String,
+        val language: LanguageMode,
+    )
+
+    private var lastAutoCorrection: LastAutoCorrection? = null
+    private var activeCursorWord: CursorWordContext? = null
 
     private val sinhalaBuffer = SinhalaTransliterator.ComposingBuffer()
     private val englishBuffer = StringBuilder()
@@ -113,12 +127,30 @@ class UTypeInputMethodService : InputMethodService() {
     /** Optional override used strictly in Robolectric unit tests where Android's Window/Binder IC is absent. */
     internal var testInputConnectionOverride: InputConnection? = null
     internal var testEditorInfoOverride: EditorInfo? = null
+    internal var suggestionDebounceMs: Long = 30L
 
     private val activeInputConnection: InputConnection?
         get() = testInputConnectionOverride ?: currentInputConnection
 
     private val activeEditorInfo: EditorInfo?
         get() = testEditorInfoOverride ?: currentInputEditorInfo
+
+    private val isPrivacyRestricted: Boolean
+        get() = isIncognito || isPasswordField || isSensitiveField || noPersonalizedLearning
+
+    private val canShowSuggestions: Boolean
+        get() = settings.suggestionBarEnabled && settings.suggestionsEnabled && !isPrivacyRestricted
+
+    private val canLearnWords: Boolean
+        get() = settings.learnFromTyping && !isPrivacyRestricted
+
+    private fun currentSuggestionOptions(): SuggestionOptions = SuggestionOptions(
+        suggestionsEnabled = settings.suggestionsEnabled,
+        spellingCorrectionEnabled = settings.spellingCorrectionEnabled,
+        blockOffensiveSuggestions = settings.blockOffensiveSuggestions,
+        englishDictionaryEnabled = settings.englishDictionaryEnabled,
+        sinhalaDictionaryEnabled = settings.sinhalaDictionaryEnabled,
+    )
 
     private var clipboardManager: ClipboardManager? = null
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
@@ -130,12 +162,17 @@ class UTypeInputMethodService : InputMethodService() {
     internal val currentLayoutModeForTest: LayoutMode get() = layoutMode
     internal val currentShiftStateForTest: ShiftState get() = shiftState
     internal val isIncognitoForTest: Boolean get() = isIncognito
+    internal val isPrivacyRestrictedForTest: Boolean get() = isPrivacyRestricted
     internal val activePanelNameForTest: String get() = activePanel.name
     internal val keyboardViewForTest: KeyboardCanvasView get() = keyboardView
     internal val rootContainerForTest: LinearLayout get() = rootContainer
     internal val topStripViewForTest: TopStripView get() = topStripView
     internal fun dispatchKeyActionForTest(action: KeyAction) = handleKeyAction(action)
     internal fun dispatchToolActionForTest(action: TopStripView.ToolAction) = handleToolStripAction(action)
+    internal fun setSettingsForTest(updated: KeyboardSettings) {
+        settings = updated
+        if (::rootContainer.isInitialized) refreshAllViews()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -166,6 +203,10 @@ class UTypeInputMethodService : InputMethodService() {
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         languageRestoreJob?.cancel()
         maintenanceJob?.cancel()
+        suggestionJob?.cancel()
+        if (::topStripView.isInitialized) {
+            topStripView.dismissActionPopup()
+        }
         if (::voicePanel.isInitialized) {
             voicePanel.stopAndRelease()
         }
@@ -211,8 +252,37 @@ class UTypeInputMethodService : InputMethodService() {
                     applySuggestion(item)
                 }
 
+                override fun onBlockSuggestion(item: SuggestionItem) {
+                    performFeedback()
+                    if (!isPrivacyRestricted) {
+                        serviceScope.launch {
+                            app.suggestionEngine.blockSuggestion(item.text, item.language)
+                            if (activeCursorWord != null && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
+                                scheduleCursorWordSuggestions()
+                            } else {
+                                updateSuggestions()
+                            }
+                        }
+                    }
+                }
+
+                override fun onAddSuggestionToDictionary(item: SuggestionItem) {
+                    performFeedback()
+                    if (!isPrivacyRestricted) {
+                        serviceScope.launch {
+                            app.suggestionEngine.addPersonalWord(item.text, item.language)
+                            if (activeCursorWord != null && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
+                                scheduleCursorWordSuggestions()
+                            } else {
+                                updateSuggestions()
+                            }
+                        }
+                    }
+                }
+
                 override fun onDismissSuggestions() {
                     performFeedback()
+                    activeCursorWord = null
                 }
             }
         }
@@ -419,14 +489,19 @@ class UTypeInputMethodService : InputMethodService() {
         sinhalaBuffer.clear()
         englishBuffer.setLength(0)
         justCommittedWordForDoubleSpace = false
+        lastAutoCorrection = null
+        activeCursorWord = null
         selectionAnchorPos = null
+        suggestionJob?.cancel()
 
         val inputType = info?.inputType ?: 0
         val inputClass = inputType and InputType.TYPE_MASK_CLASS
         val variation = inputType and InputType.TYPE_MASK_VARIATION
         val imeOptions = info?.imeOptions ?: 0
 
-        isPasswordField = isPasswordInputType(inputClass, variation)
+        isPasswordField = CursorWordExtractor.isPasswordInputType(info)
+        isSensitiveField = CursorWordExtractor.isSensitiveInputType(info)
+        noPersonalizedLearning = CursorWordExtractor.hasNoPersonalizedLearningFlag(info)
         currentImeAction = imeOptions and EditorInfo.IME_MASK_ACTION
         val isMultiLine = (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
         currentNoEnterAction = isMultiLine || (imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
@@ -448,6 +523,9 @@ class UTypeInputMethodService : InputMethodService() {
 
         if (::keyboardView.isInitialized) {
             keyboardView.isPasswordField = isPasswordField
+        }
+        if (::topStripView.isInitialized && isPrivacyRestricted) {
+            topStripView.showTools()
         }
 
         // Cancel any previous async language restoration so it can never stomp newer state
@@ -511,6 +589,9 @@ class UTypeInputMethodService : InputMethodService() {
         candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (newSelStart != oldSelStart || newSelEnd != oldSelEnd) {
+            lastAutoCorrection = null
+        }
         val hasComposing = !sinhalaBuffer.isEmpty || englishBuffer.isNotEmpty()
         if (hasComposing) {
             val cursorLeftComposing = (candidatesStart == -1 && candidatesEnd == -1) ||
@@ -527,12 +608,25 @@ class UTypeInputMethodService : InputMethodService() {
         }
         if (newSelStart == newSelEnd && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
             updateAutoCapitalization()
+            scheduleCursorWordSuggestions()
+        } else if (newSelStart != newSelEnd) {
+            activeCursorWord = null
+            suggestionJob?.cancel()
+            if (::topStripView.isInitialized && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
+                topStripView.showTools()
+            }
         }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         languageRestoreJob?.cancel()
+        suggestionJob?.cancel()
+        activeCursorWord = null
+        lastAutoCorrection = null
         commitComposingBuffer()
+        if (::topStripView.isInitialized) {
+            topStripView.dismissActionPopup()
+        }
         if (::keyboardView.isInitialized) {
             keyboardView.dismissPreviewPopup()
             keyboardView.dismissAlternatesPopup()
@@ -649,6 +743,9 @@ class UTypeInputMethodService : InputMethodService() {
             TopStripView.ToolAction.INCOGNITO_LOCK -> {
                 isIncognito = !isIncognito
                 if (isIncognito) {
+                    suggestionJob?.cancel()
+                    activeCursorWord = null
+                    lastAutoCorrection = null
                     topStripView.showTools()
                 }
                 refreshAllViews()
@@ -769,6 +866,8 @@ class UTypeInputMethodService : InputMethodService() {
         val ic = activeInputConnection ?: return
         commitComposingBuffer()
         justCommittedWordForDoubleSpace = false
+        lastAutoCorrection = null
+        activeCursorWord = null
         val styled = if (languageMode == LanguageMode.ENGLISH && !isPasswordField) {
             StylishFontEngine.transform(text, activeFontStyle)
         } else text
@@ -780,6 +879,8 @@ class UTypeInputMethodService : InputMethodService() {
     private fun handleTextInput(text: String) {
         val ic = activeInputConnection ?: return
         justCommittedWordForDoubleSpace = false
+        lastAutoCorrection = null
+        activeCursorWord = null
 
         val isSingleLetter = text.length == 1 && text[0].isLetter()
         val isWordChar = text.length == 1 && (text[0].isLetter() || text[0] == '\'')
@@ -845,6 +946,23 @@ class UTypeInputMethodService : InputMethodService() {
     private fun handleBackspace() {
         val ic = activeInputConnection ?: return
         justCommittedWordForDoubleSpace = false
+        activeCursorWord = null
+
+        // Section 3A: One-tap undo immediately after auto-correct on space
+        val pendingUndo = lastAutoCorrection
+        if (pendingUndo != null && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
+            lastAutoCorrection = null
+            val expectedSuffix = "${pendingUndo.correctedWord} "
+            val before = ic.getTextBeforeCursor(expectedSuffix.length + 2, 0)?.toString().orEmpty()
+            if (before.endsWith(expectedSuffix)) {
+                ic.deleteSurroundingText(expectedSuffix.length, 0)
+                ic.commitText(pendingUndo.originalWord, 1)
+                updateAutoCapitalization()
+                scheduleCursorWordSuggestions()
+                return
+            }
+        }
+        lastAutoCorrection = null
 
         // In Sinhala mode, delete 1 typed Latin letter from composing buffer first!
         if (!sinhalaBuffer.isEmpty) {
@@ -1006,22 +1124,64 @@ class UTypeInputMethodService : InputMethodService() {
     private fun handleSpace() {
         val ic = activeInputConnection ?: return
         val now = SystemClock.uptimeMillis()
+        activeCursorWord = null
 
         // Check Text Shortcut expansion on space!
         val rawWord = if (!sinhalaBuffer.isEmpty) sinhalaBuffer.rawLatin else englishBuffer.toString()
-        val shortcutExpansion = if (!isPasswordField && rawWord.isNotEmpty()) {
+        val shortcutExpansion = if (!isPasswordField && !isSensitiveField && rawWord.isNotEmpty()) {
             app.suggestionEngine.getShortcutExpansion(rawWord)
         } else null
 
         if (shortcutExpansion != null) {
             sinhalaBuffer.clear()
             englishBuffer.setLength(0)
+            lastAutoCorrection = null
             ic.commitText("$shortcutExpansion ", 1)
             if (::topStripView.isInitialized) topStripView.showTools()
             justCommittedWordForDoubleSpace = false
             updateAutoCapitalization()
             return
         }
+
+        // Section 3A: Optional Auto-Correct on Space (default OFF) with one-tap Backspace undo
+        val hadSinhala = !sinhalaBuffer.isEmpty
+        val hadEnglish = englishBuffer.isNotEmpty()
+        if (settings.autoCorrectOnSpace &&
+            settings.spellingCorrectionEnabled &&
+            !isPrivacyRestricted &&
+            (hadSinhala || hadEnglish)
+        ) {
+            val originalWord = if (hadSinhala) sinhalaBuffer.sinhalaText else englishBuffer.toString()
+            val rawLatin = if (hadSinhala) sinhalaBuffer.rawLatin else originalWord
+            val lang = if (hadSinhala) LanguageMode.SINHALA else LanguageMode.ENGLISH
+            val prevWord = readPreviousWordBeforeComposing(originalWord.length)
+            val corrected = app.suggestionEngine.bestAutoCorrectCandidate(
+                typedWord = originalWord,
+                language = lang,
+                rawLatin = rawLatin,
+                previousWord = prevWord,
+                options = currentSuggestionOptions(),
+            )
+            if (corrected != null && corrected != originalWord) {
+                sinhalaBuffer.clear()
+                englishBuffer.setLength(0)
+                suggestionJob?.cancel()
+                ic.commitText("$corrected ", 1)
+                lastAutoCorrection = LastAutoCorrection(
+                    originalWord = originalWord,
+                    correctedWord = corrected,
+                    language = lang,
+                )
+                maybeLearnWord(corrected, lang)
+                if (::topStripView.isInitialized) topStripView.showTools()
+                lastSpaceTapMs = now
+                justCommittedWordForDoubleSpace = true
+                updateAutoCapitalization()
+                return
+            }
+        }
+
+        lastAutoCorrection = null
 
         // Double-space -> ". " in English mode
         if (languageMode == LanguageMode.ENGLISH &&
@@ -1043,7 +1203,7 @@ class UTypeInputMethodService : InputMethodService() {
             }
         }
 
-        val hadWord = !sinhalaBuffer.isEmpty || englishBuffer.isNotEmpty()
+        val hadWord = hadSinhala || hadEnglish
         commitComposingBuffer()
         ic.commitText(" ", 1)
         lastSpaceTapMs = now
@@ -1053,6 +1213,8 @@ class UTypeInputMethodService : InputMethodService() {
 
     private fun handleEnter() {
         val ic = activeInputConnection ?: return
+        lastAutoCorrection = null
+        activeCursorWord = null
         commitComposingBuffer()
         justCommittedWordForDoubleSpace = false
 
@@ -1079,6 +1241,7 @@ class UTypeInputMethodService : InputMethodService() {
 
     private fun commitComposingBuffer() {
         val ic = activeInputConnection
+        suggestionJob?.cancel()
         if (!sinhalaBuffer.isEmpty) {
             val committed = sinhalaBuffer.sinhalaText
             sinhalaBuffer.clear()
@@ -1098,20 +1261,60 @@ class UTypeInputMethodService : InputMethodService() {
 
     private fun applySuggestion(item: SuggestionItem) {
         val ic = activeInputConnection ?: return
+        lastAutoCorrection = null
+        suggestionJob?.cancel()
+
+        val cursorWord = activeCursorWord
+        if (cursorWord != null && sinhalaBuffer.isEmpty && englishBuffer.isEmpty()) {
+            // Section 3B: Replace ONLY the already-typed word in place, preserving sentence, punctuation & cursor
+            activeCursorWord = null
+            val before = ic.getTextBeforeCursor(CursorWordExtractor.BOUNDED_CURSOR_WINDOW, 0)?.toString().orEmpty()
+            val after = ic.getTextAfterCursor(CursorWordExtractor.BOUNDED_CURSOR_WINDOW, 0)?.toString().orEmpty()
+            val currentCtx = CursorWordExtractor.extractWordAtCursor(before, after) ?: cursorWord
+            ic.beginBatchEdit()
+            try {
+                ic.deleteSurroundingText(currentCtx.charsBeforeCursor, currentCtx.charsAfterCursor)
+                ic.commitText(item.text, 1)
+            } finally {
+                ic.endBatchEdit()
+            }
+            if (!item.isShortcut) {
+                maybeLearnWord(item.text, item.language)
+            }
+            if (::topStripView.isInitialized) topStripView.showTools()
+            justCommittedWordForDoubleSpace = false
+            updateAutoCapitalization()
+            return
+        }
+
+        // Section 3A: Live composing word replacement + trailing space
+        activeCursorWord = null
         sinhalaBuffer.clear()
         englishBuffer.setLength(0)
         ic.commitText("${item.text} ", 1)
         if (!item.isShortcut) {
-            maybeLearnWord(item.text, languageMode)
+            maybeLearnWord(item.text, item.language)
         }
         if (::topStripView.isInitialized) topStripView.showTools()
         justCommittedWordForDoubleSpace = false
         updateAutoCapitalization()
     }
 
+    private fun readPreviousWordBeforeComposing(composingLength: Int): String? {
+        val ic = activeInputConnection ?: return null
+        val window = (composingLength + CursorWordExtractor.BOUNDED_CURSOR_WINDOW).coerceAtMost(96)
+        val before = ic.getTextBeforeCursor(window, 0)?.toString().orEmpty()
+        if (before.length <= composingLength) return null
+        val prefix = before.substring(0, before.length - composingLength)
+        return CursorWordExtractor.extractPreviousWord(prefix)
+    }
+
     private fun updateSuggestions() {
         if (!::topStripView.isInitialized) return
-        if (!settings.suggestionsEnabled || isPasswordField) {
+        activeCursorWord = null
+        suggestionJob?.cancel()
+
+        if (!canShowSuggestions) {
             topStripView.showTools()
             return
         }
@@ -1132,21 +1335,87 @@ class UTypeInputMethodService : InputMethodService() {
             return
         }
 
-        val items = app.suggestionEngine.suggest(
-            composingWord = composing,
-            language = languageMode,
-            rawLatin = rawLatin,
-            limit = 3,
-        )
-        if (items.isEmpty()) {
+        val lang = languageMode
+        val prevWord = readPreviousWordBeforeComposing(composing.length)
+        val opts = currentSuggestionOptions()
+        val debounce = suggestionDebounceMs
+
+        suggestionJob = serviceScope.launch {
+            if (debounce > 0L) delay(debounce)
+            val items = withContext(Dispatchers.Default) {
+                app.suggestionEngine.suggest(
+                    composingWord = composing,
+                    language = lang,
+                    rawLatin = rawLatin,
+                    previousWord = prevWord,
+                    limit = 5,
+                    options = opts,
+                )
+            }
+            if (!canShowSuggestions) {
+                topStripView.showTools()
+                return@launch
+            }
+            if (items.isEmpty()) {
+                topStripView.showTools()
+            } else {
+                topStripView.showSuggestions(items)
+            }
+        }
+    }
+
+    /**
+     * Section 3B: Detects an already-typed word under or adjacent to the cursor using bounded
+     * 50-char reads and shows spelling corrections / context alternatives asynchronously.
+     */
+    private fun scheduleCursorWordSuggestions() {
+        if (!::topStripView.isInitialized) return
+        suggestionJob?.cancel()
+        activeCursorWord = null
+
+        if (!canShowSuggestions || !settings.spellingCorrectionEnabled) {
             topStripView.showTools()
-        } else {
-            topStripView.showSuggestions(items)
+            return
+        }
+        val ic = activeInputConnection ?: return
+        val before = ic.getTextBeforeCursor(CursorWordExtractor.BOUNDED_CURSOR_WINDOW, 0)?.toString().orEmpty()
+        val after = ic.getTextAfterCursor(CursorWordExtractor.BOUNDED_CURSOR_WINDOW, 0)?.toString().orEmpty()
+        val ctx = CursorWordExtractor.extractWordAtCursor(before, after)
+        if (ctx == null) {
+            topStripView.showTools()
+            return
+        }
+
+        val lang = languageMode
+        val opts = currentSuggestionOptions()
+        val debounce = suggestionDebounceMs
+
+        suggestionJob = serviceScope.launch {
+            if (debounce > 0L) delay(debounce)
+            val items = withContext(Dispatchers.Default) {
+                app.suggestionEngine.suggestForExistingWord(
+                    word = ctx.word,
+                    previousWord = ctx.previousWord,
+                    fallbackLanguage = lang,
+                    limit = 5,
+                    options = opts,
+                )
+            }
+            if (!canShowSuggestions || !sinhalaBuffer.isEmpty || englishBuffer.isNotEmpty()) {
+                return@launch
+            }
+            if (items.isEmpty()) {
+                activeCursorWord = null
+                topStripView.showTools()
+            } else {
+                activeCursorWord = ctx
+                topStripView.showSuggestions(items)
+            }
         }
     }
 
     private fun maybeLearnWord(word: String, language: LanguageMode) {
-        if (isIncognito || isPasswordField || word.length < 2) return
+        if (!canLearnWords || word.length < 2) return
         serviceScope.launch {
             app.suggestionEngine.learnWord(word, language)
         }
@@ -1296,7 +1565,7 @@ class UTypeInputMethodService : InputMethodService() {
     }
 
     private fun captureSystemClipboard() {
-        if (!settings.clipboardEnabled || isIncognito || isPasswordField) return
+        if (!settings.clipboardEnabled || isPrivacyRestricted) return
         val cm = clipboardManager ?: return
         val clip = try {
             cm.primaryClip
@@ -1323,7 +1592,8 @@ class UTypeInputMethodService : InputMethodService() {
             val retentionMs = settings.clipboardDuration.millis
             val items = app.clipboardRepository.getItems(retentionMs)
             val banner = when {
-                isPasswordField -> "Password field active — clipboard saving paused."
+                isPasswordField || isSensitiveField -> "Sensitive field active — clipboard saving paused."
+                noPersonalizedLearning -> "Private input flag active — clipboard saving paused."
                 isIncognito -> "Incognito lock is ON — copied texts are not saved."
                 !settings.clipboardEnabled -> "Clipboard history is turned off in Settings."
                 else -> null

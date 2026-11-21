@@ -7,26 +7,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DeleteSweep
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,15 +32,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.udara.Utype.data.KeyboardSettings
 import com.udara.Utype.data.LanguageMode
+import com.udara.Utype.engine.PersonalWordItem
 import com.udara.Utype.engine.SinhalaTransliterator
 
 @Composable
 fun TypingSettingsScreen(
     settings: KeyboardSettings,
     learnedWordCount: Int,
+    personalWords: List<PersonalWordItem>,
     viewModel: SettingsViewModel,
 ) {
-    var showClearDialog by remember { mutableStateOf(false) }
     var singlishProbe by rememberSaveable { mutableStateOf("ammaa") }
     val liveSinhala = remember(singlishProbe) { SinhalaTransliterator.transliterate(singlishProbe) }
 
@@ -95,6 +89,118 @@ fun TypingSettingsScreen(
                     }
                 }
             }
+
+            // Smart Suggestions & Spell Check (Section 3E)
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Smart Suggestions & Spelling",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+
+                    SettingToggleRow(
+                        title = "Suggestion Bar",
+                        subtitle = "Show the suggestion bar above the keys while typing",
+                        checked = settings.suggestionBarEnabled,
+                        tag = "toggle_suggestion_bar",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(suggestionBarEnabled = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Show Suggestions",
+                        subtitle = "Display up to 5 offline completions & candidates",
+                        checked = settings.suggestionsEnabled,
+                        tag = "toggle_suggestions",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(suggestionsEnabled = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Spelling Correction",
+                        subtitle = "Suggest fixes while typing or when tapping an existing word",
+                        checked = settings.spellingCorrectionEnabled,
+                        tag = "toggle_spelling_correction",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(spellingCorrectionEnabled = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Auto-Correct on Space",
+                        subtitle = "Replace misspelled words on Space (press Backspace to undo)",
+                        checked = settings.autoCorrectOnSpace,
+                        tag = "toggle_autocorrect_space",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(autoCorrectOnSpace = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Learn from My Typing",
+                        subtitle = "Rank your frequent words higher (disabled in incognito & sensitive fields)",
+                        checked = settings.learnFromTyping,
+                        tag = "toggle_learn_typing",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(learnFromTyping = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Block Offensive Suggestions",
+                        subtitle = "Never auto-suggest or auto-correct to offensive words",
+                        checked = settings.blockOffensiveSuggestions,
+                        tag = "toggle_block_offensive",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(blockOffensiveSuggestions = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "English Dictionary",
+                        subtitle = "Offline English completions, bigrams, and spell check",
+                        checked = settings.englishDictionaryEnabled,
+                        tag = "toggle_english_dict",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(englishDictionaryEnabled = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Sinhala Dictionary",
+                        subtitle = "Offline Sinhala & Singlish phonetic fuzzy suggestions",
+                        checked = settings.sinhalaDictionaryEnabled,
+                        tag = "toggle_sinhala_dict",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(sinhalaDictionaryEnabled = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Auto-Capitalization",
+                        subtitle = "Capitalize the start of each English sentence",
+                        checked = settings.autoCapitalize,
+                        tag = "toggle_autocap",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(autoCapitalize = v) } },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Double-Space Period",
+                        subtitle = "Double tap space in English for a period",
+                        checked = settings.doubleSpacePeriod,
+                        tag = "toggle_double_space",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(doubleSpacePeriod = v) } },
+                    )
+                }
+            }
+
+            // Encrypted Personal Dictionary Management
+            PersonalDictionaryCard(
+                learnedWordCount = learnedWordCount,
+                personalWords = personalWords,
+                viewModel = viewModel,
+            )
 
             // Keys & Feedback
             Surface(
@@ -165,63 +271,6 @@ fun TypingSettingsScreen(
                 }
             }
 
-            // Suggestions & Smart Typing
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Suggestions & Dictionary",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-
-                    SettingToggleRow(
-                        title = "Word Suggestions",
-                        subtitle = "Show 3 offline Sinhala & English suggestions",
-                        checked = settings.suggestionsEnabled,
-                        tag = "toggle_suggestions",
-                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(suggestionsEnabled = v) } },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-
-                    SettingToggleRow(
-                        title = "Auto-Capitalization",
-                        subtitle = "Capitalize the start of each English sentence",
-                        checked = settings.autoCapitalize,
-                        tag = "toggle_autocap",
-                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(autoCapitalize = v) } },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-
-                    SettingToggleRow(
-                        title = "Double-Space Period",
-                        subtitle = "Double tap space in English for a period",
-                        checked = settings.doubleSpacePeriod,
-                        tag = "toggle_double_space",
-                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(doubleSpacePeriod = v) } },
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedButton(
-                        onClick = { showClearDialog = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("clear_learned_words_button"),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(imageVector = Icons.Outlined.DeleteSweep, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Clear Learned Words ($learnedWordCount saved)")
-                    }
-                }
-            }
-
             // Singlish Engine Quick Check
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -255,32 +304,6 @@ fun TypingSettingsScreen(
                 }
             }
         }
-    }
-
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Learned Words?") },
-            text = {
-                Text("This removes all $learnedWordCount locally learned words. Bundled Sinhala and English dictionaries stay intact.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearLearnedWords()
-                        showClearDialog = false
-                    },
-                    modifier = Modifier.testTag("confirm_clear_words_button"),
-                ) {
-                    Text("Clear All")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
     }
 }
 

@@ -27,16 +27,23 @@ class BackupManager(
     private val settingsRepo: SettingsRepository,
     private val db: UTypeDatabase,
     private val clipboardRepo: ClipboardRepository,
+    private val crypto: ClipboardCrypto = PassThroughClipboardCrypto(),
 ) {
+    companion object {
+        private const val MAX_BACKUP_BYTES = 2 * 1024 * 1024 // 2 MB DoS guard
+        private const val MAX_ITEMS_PER_SECTION = 10_000
+    }
+
     suspend fun buildBackupJson(): String = withContext(Dispatchers.IO) {
         val settings = settingsRepo.currentSettings()
         val shortcuts = db.textShortcutDao().getAll()
-        val learnedWords = db.learnedWordDao().getAll()
+        val personalWords = db.personalWordDao().getAll()
+        val legacyLearnedWords = db.learnedWordDao().getAll()
         val pinnedClips = clipboardRepo.getPinnedItems()
 
         val root = JSONObject().apply {
             put("app", "U Type")
-            put("schemaVersion", 1)
+            put("schemaVersion", 2)
             put("exportedAt", System.currentTimeMillis())
 
             put("settings", JSONObject().apply {
@@ -55,7 +62,14 @@ class BackupManager(
                 put("defaultLanguage", settings.defaultLanguage.code)
                 put("autoCapitalize", settings.autoCapitalize)
                 put("doubleSpacePeriod", settings.doubleSpacePeriod)
+                put("suggestionBarEnabled", settings.suggestionBarEnabled)
                 put("suggestionsEnabled", settings.suggestionsEnabled)
+                put("spellingCorrectionEnabled", settings.spellingCorrectionEnabled)
+                put("autoCorrectOnSpace", settings.autoCorrectOnSpace)
+                put("learnFromTyping", settings.learnFromTyping)
+                put("blockOffensiveSuggestions", settings.blockOffensiveSuggestions)
+                put("englishDictionaryEnabled", settings.englishDictionaryEnabled)
+                put("sinhalaDictionaryEnabled", settings.sinhalaDictionaryEnabled)
                 put("clipboardEnabled", settings.clipboardEnabled)
                 put("clipboardDurationMinutes", settings.clipboardDuration.minutes)
                 put("oneHandedMode", settings.oneHandedMode.id)
@@ -72,13 +86,33 @@ class BackupManager(
             })
 
             put("learnedWords", JSONArray().apply {
-                learnedWords.forEach { w ->
-                    put(JSONObject().apply {
-                        put("word", w.word)
-                        put("language", w.language)
-                        put("frequency", w.frequency)
-                        put("lastUsedAt", w.lastUsedAt)
-                    })
+                val exported = HashSet<String>()
+                personalWords.forEach { pw ->
+                    val plain = try {
+                        crypto.decrypt(pw.encryptedWord, pw.iv)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (!plain.isNullOrBlank() && exported.add("${pw.language}:$plain")) {
+                        put(JSONObject().apply {
+                            put("word", plain)
+                            put("language", pw.language)
+                            put("frequency", pw.frequency)
+                            put("isUserAdded", pw.isUserAdded)
+                            put("lastUsedAt", pw.lastUsedAt)
+                        })
+                    }
+                }
+                legacyLearnedWords.forEach { w ->
+                    if (exported.add("${w.language}:${w.word}")) {
+                        put(JSONObject().apply {
+                            put("word", w.word)
+                            put("language", w.language)
+                            put("frequency", w.frequency)
+                            put("isUserAdded", false)
+                            put("lastUsedAt", w.lastUsedAt)
+                        })
+                    }
                 }
             })
 
@@ -141,14 +175,19 @@ class BackupManager(
 
     suspend fun importFromUri(uri: Uri): Result<BackupSummary> = withContext(Dispatchers.IO) {
         runCatching {
-            val jsonText = context.contentResolver.openInputStream(uri)?.use { input ->
-                input.bufferedReader(Charsets.UTF_8).readText()
+            val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                val data = input.readBytes()
+                require(data.size <= MAX_BACKUP_BYTES) { "Backup file exceeds 2 MB limit." }
+                data
             } ?: error("Cannot read selected backup file")
-            importFromJson(jsonText)
+            importFromJson(String(bytes, Charsets.UTF_8))
         }
     }
 
     suspend fun importFromJson(jsonText: String): BackupSummary = withContext(Dispatchers.IO) {
+        require(jsonText.toByteArray(Charsets.UTF_8).size <= MAX_BACKUP_BYTES) {
+            "Backup file exceeds 2 MB limit."
+        }
         val trimmed = jsonText.trim()
         require(trimmed.startsWith("{")) { "Invalid backup file format (expected JSON object)." }
         val root = JSONObject(trimmed)
@@ -177,7 +216,14 @@ class BackupManager(
                     defaultLanguage = LanguageMode.fromCode(s.optString("defaultLanguage", current.defaultLanguage.code)),
                     autoCapitalize = s.optBoolean("autoCapitalize", current.autoCapitalize),
                     doubleSpacePeriod = s.optBoolean("doubleSpacePeriod", current.doubleSpacePeriod),
+                    suggestionBarEnabled = s.optBoolean("suggestionBarEnabled", current.suggestionBarEnabled),
                     suggestionsEnabled = s.optBoolean("suggestionsEnabled", current.suggestionsEnabled),
+                    spellingCorrectionEnabled = s.optBoolean("spellingCorrectionEnabled", current.spellingCorrectionEnabled),
+                    autoCorrectOnSpace = s.optBoolean("autoCorrectOnSpace", current.autoCorrectOnSpace),
+                    learnFromTyping = s.optBoolean("learnFromTyping", current.learnFromTyping),
+                    blockOffensiveSuggestions = s.optBoolean("blockOffensiveSuggestions", current.blockOffensiveSuggestions),
+                    englishDictionaryEnabled = s.optBoolean("englishDictionaryEnabled", current.englishDictionaryEnabled),
+                    sinhalaDictionaryEnabled = s.optBoolean("sinhalaDictionaryEnabled", current.sinhalaDictionaryEnabled),
                     clipboardEnabled = s.optBoolean("clipboardEnabled", current.clipboardEnabled),
                     clipboardDuration = ClipboardDuration.fromMinutes(
                         s.optInt("clipboardDurationMinutes", current.clipboardDuration.minutes)
@@ -189,11 +235,12 @@ class BackupManager(
 
         var shortcutsCount = 0
         root.optJSONArray("shortcuts")?.let { arr ->
-            for (i in 0 until arr.length()) {
+            val count = arr.length().coerceAtMost(MAX_ITEMS_PER_SECTION)
+            for (i in 0 until count) {
                 val obj = arr.optJSONObject(i) ?: continue
                 val code = obj.optString("shortCode").trim().lowercase()
                 val expansion = obj.optString("expansion").trim()
-                if (code.isNotEmpty() && expansion.isNotEmpty()) {
+                if (code.isNotEmpty() && code.length <= 40 && expansion.isNotEmpty() && expansion.length <= 500) {
                     db.textShortcutDao().upsert(
                         TextShortcutEntity(
                             shortCode = code,
@@ -208,18 +255,26 @@ class BackupManager(
 
         var learnedCount = 0
         root.optJSONArray("learnedWords")?.let { arr ->
-            for (i in 0 until arr.length()) {
+            val count = arr.length().coerceAtMost(MAX_ITEMS_PER_SECTION)
+            for (i in 0 until count) {
                 val obj = arr.optJSONObject(i) ?: continue
                 val word = obj.optString("word").trim()
                 val rawLang = obj.optString("language", "en")
-                val lang = LanguageMode.fromCode(rawLang).code
-                val freq = obj.optInt("frequency", 1).coerceAtLeast(1)
-                if (word.isNotEmpty()) {
-                    db.learnedWordDao().upsert(
-                        LearnedWordEntity(
-                            word = word,
-                            language = lang,
+                val langMode = LanguageMode.fromCode(rawLang)
+                val freq = obj.optInt("frequency", 1).coerceIn(1, 100_000)
+                val userAdded = obj.optBoolean("isUserAdded", false)
+                if (word.isNotEmpty() && word.length <= 40 && !word.any { it.isWhitespace() || Character.isISOControl(it) }) {
+                    val normalized = if (langMode == LanguageMode.ENGLISH) word.lowercase() else word
+                    val hash = crypto.hash("${langMode.code}:$normalized")
+                    val enc = crypto.encrypt(word)
+                    db.personalWordDao().upsert(
+                        PersonalWordEntity(
+                            wordHash = hash,
+                            encryptedWord = enc.ciphertext,
+                            iv = enc.iv,
+                            language = langMode.code,
                             frequency = freq,
+                            isUserAdded = userAdded,
                             lastUsedAt = obj.optLong("lastUsedAt", System.currentTimeMillis()),
                         )
                     )
@@ -230,10 +285,11 @@ class BackupManager(
 
         var pinnedCount = 0
         root.optJSONArray("pinnedClipboardItems")?.let { arr ->
-            for (i in 0 until arr.length()) {
+            val count = arr.length().coerceAtMost(MAX_ITEMS_PER_SECTION)
+            for (i in 0 until count) {
                 val obj = arr.optJSONObject(i) ?: continue
                 val text = obj.optString("text")
-                if (text.isNotBlank()) {
+                if (text.isNotBlank() && text.length <= 20_000) {
                     clipboardRepo.saveClip(text = text, isPinned = true)
                     pinnedCount++
                 }

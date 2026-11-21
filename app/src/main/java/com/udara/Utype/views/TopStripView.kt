@@ -10,9 +10,12 @@ import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import androidx.annotation.DrawableRes
 import com.example.R
@@ -22,9 +25,9 @@ import com.udara.Utype.engine.SuggestionItem
 
 /**
  * Clean matte Top Strip above the keyboard keys (48dp touch height).
- * Switches smoothly between the 7-icon Tool Strip and the 3-suggestion Suggestion Bar.
- * Uses crisp tinted monochrome vector icons and a dynamic EN / සිං language pill so every
- * button responds with clear visual feedback in both Light and Dark themes.
+ * Switches smoothly between the 7-icon Tool Strip and the up-to-5-candidate Suggestion Bar.
+ * Long-pressing any suggestion displays a lightweight popup with "Don't suggest this"
+ * and "Add to dictionary".
  */
 class TopStripView(context: Context) : FrameLayout(context) {
 
@@ -41,6 +44,8 @@ class TopStripView(context: Context) : FrameLayout(context) {
     interface Listener {
         fun onToolClicked(action: ToolAction)
         fun onSuggestionClicked(item: SuggestionItem)
+        fun onBlockSuggestion(item: SuggestionItem)
+        fun onAddSuggestionToDictionary(item: SuggestionItem)
         fun onDismissSuggestions()
     }
 
@@ -53,11 +58,15 @@ class TopStripView(context: Context) : FrameLayout(context) {
 
     private val toolRow: LinearLayout
     private val suggestionRow: LinearLayout
+    private val suggestionScroll: HorizontalScrollView
+    private val suggestionChipsContainer: LinearLayout
     private val toolCells = LinkedHashMap<ToolAction, FrameLayout>()
     private val toolBadges = LinkedHashMap<ToolAction, View>()
     private var languageTextView: TextView? = null
-    private val suggestionViews = ArrayList<TextView>(3)
     private val dismissButton: TextView
+
+    private var currentItems: List<SuggestionItem> = emptyList()
+    private var actionPopup: PopupWindow? = null
 
     init {
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(48f))
@@ -114,7 +123,7 @@ class TopStripView(context: Context) : FrameLayout(context) {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
-            setPadding(dp(10f), 0, dp(10f), 0)
+            setPadding(dp(8f), 0, dp(8f), 0)
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         }
 
@@ -125,7 +134,7 @@ class TopStripView(context: Context) : FrameLayout(context) {
             typeface = Typeface.DEFAULT_BOLD
             contentDescription = context.getString(R.string.cd_back)
             layoutParams = LinearLayout.LayoutParams(dp(30f), dp(30f)).apply {
-                marginEnd = dp(8f)
+                marginEnd = dp(6f)
             }
             setOnClickListener {
                 showTools()
@@ -134,18 +143,20 @@ class TopStripView(context: Context) : FrameLayout(context) {
         }
         suggestionRow.addView(dismissButton)
 
-        repeat(3) {
-            val tv = TextView(context).apply {
-                gravity = Gravity.CENTER
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                setPadding(dp(6f), dp(6f), dp(6f), dp(6f))
-                layoutParams = LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
-            }
-            suggestionViews.add(tv)
-            suggestionRow.addView(tv)
+        suggestionChipsContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)
         }
+
+        suggestionScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+            overScrollMode = OVER_SCROLL_NEVER
+            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
+            addView(suggestionChipsContainer)
+        }
+        suggestionRow.addView(suggestionScroll)
 
         addView(toolRow)
         addView(suggestionRow)
@@ -235,6 +246,9 @@ class TopStripView(context: Context) : FrameLayout(context) {
         }
 
         refreshToolStates()
+        if (currentItems.isNotEmpty() && suggestionRow.visibility == View.VISIBLE) {
+            renderSuggestionChips(currentItems)
+        }
     }
 
     fun updateStates(incognito: Boolean, stylishFontActive: Boolean, sinhalaActive: Boolean) {
@@ -300,30 +314,159 @@ class TopStripView(context: Context) : FrameLayout(context) {
     }
 
     fun showSuggestions(items: List<SuggestionItem>) {
-        if (items.isEmpty()) {
+        dismissActionPopup()
+        val limited = items.take(5)
+        currentItems = limited
+        if (limited.isEmpty()) {
             showTools()
             return
         }
         toolRow.visibility = View.GONE
         suggestionRow.visibility = View.VISIBLE
+        renderSuggestionChips(limited)
+        suggestionScroll.scrollTo(0, 0)
+    }
 
-        for (i in suggestionViews.indices) {
-            val tv = suggestionViews[i]
-            val item = items.getOrNull(i)
-            if (item != null) {
-                tv.visibility = View.VISIBLE
-                tv.text = if (item.isShortcut) "⚡ ${item.text}" else item.text
-                tv.setTextColor(if (item.isShortcut) palette.accent else palette.keyText)
-                tv.typeface = if (i == 0) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                tv.setOnClickListener { listener?.onSuggestionClicked(item) }
-            } else {
-                tv.visibility = View.INVISIBLE
-                tv.setOnClickListener(null)
+    private fun renderSuggestionChips(items: List<SuggestionItem>) {
+        suggestionChipsContainer.removeAllViews()
+        val firstCorrectionIdx = items.indexOfFirst { !it.isTypedLiteral && !it.isShortcut }
+
+        items.forEachIndexed { idx, item ->
+            if (idx > 0) {
+                val divider = View(context).apply {
+                    setBackgroundColor(palette.divider)
+                    layoutParams = LinearLayout.LayoutParams(dp(1f), dp(20f)).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                }
+                suggestionChipsContainer.addView(divider)
             }
+
+            val isPrimaryCorrection = idx == firstCorrectionIdx && item.isCorrection
+            val chip = TextView(context).apply {
+                text = item.displayText
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setPadding(dp(11f), dp(6f), dp(11f), dp(6f))
+                minWidth = dp(56f)
+                background = createCellTouchSelector()
+                setTextColor(
+                    when {
+                        item.isShortcut -> palette.accent
+                        isPrimaryCorrection -> palette.accent
+                        item.isTypedLiteral -> palette.hintText
+                        else -> palette.keyText
+                    }
+                )
+                typeface = if (isPrimaryCorrection || item.isShortcut) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                contentDescription = item.text
+                layoutParams = LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.MATCH_PARENT,
+                ).apply {
+                    if (items.size <= 3) {
+                        weight = 1f
+                    }
+                }
+                setOnClickListener {
+                    dismissActionPopup()
+                    listener?.onSuggestionClicked(item)
+                }
+                setOnLongClickListener { anchor ->
+                    if (!item.isShortcut) {
+                        showSuggestionActionsPopup(anchor, item)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            suggestionChipsContainer.addView(chip)
         }
     }
 
+    private fun showSuggestionActionsPopup(anchor: View, item: SuggestionItem) {
+        dismissActionPopup()
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6f), dp(4f), dp(6f), dp(4f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12f).toFloat()
+                setColor(palette.popupBg)
+                setStroke(dp(1f), palette.divider)
+            }
+            elevation = dp(6f).toFloat()
+        }
+
+        fun makeActionButton(label: String, onClick: () -> Unit): TextView {
+            return TextView(context).apply {
+                text = label
+                setTextColor(palette.keyText)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+                minHeight = dp(44f)
+                gravity = Gravity.CENTER
+                background = createCellTouchSelector()
+                setOnClickListener {
+                    dismissActionPopup()
+                    onClick()
+                }
+            }
+        }
+
+        val blockBtn = makeActionButton("Don't suggest this") {
+            listener?.onBlockSuggestion(item)
+        }
+        val sep = View(context).apply {
+            setBackgroundColor(palette.divider)
+            layoutParams = LinearLayout.LayoutParams(dp(1f), dp(22f))
+        }
+        val addBtn = makeActionButton("Add to dictionary") {
+            listener?.onAddSuggestionToDictionary(item)
+        }
+
+        container.addView(blockBtn)
+        container.addView(sep)
+        container.addView(addBtn)
+
+        val popup = PopupWindow(
+            container,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            false,
+        ).apply {
+            isOutsideTouchable = true
+            isTouchable = true
+        }
+        actionPopup = popup
+
+        try {
+            container.measure(
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            )
+            val yOffset = -(anchor.height + container.measuredHeight + dp(6f))
+            popup.showAsDropDown(anchor, 0, yOffset)
+        } catch (_: Exception) {
+            // Safe fallback in headless unit test environments without a Window token
+        }
+    }
+
+    fun dismissActionPopup() {
+        try {
+            actionPopup?.dismiss()
+        } catch (_: Exception) {
+        }
+        actionPopup = null
+    }
+
     fun showTools() {
+        dismissActionPopup()
+        currentItems = emptyList()
         suggestionRow.visibility = View.GONE
         toolRow.visibility = View.VISIBLE
     }
@@ -334,6 +477,20 @@ class TopStripView(context: Context) : FrameLayout(context) {
 
     internal fun languageButtonLabelForTest(): String =
         languageTextView?.text?.toString().orEmpty()
+
+    internal fun currentSuggestionsForTest(): List<SuggestionItem> = currentItems
+
+    internal fun performSuggestionClickForTest(index: Int) {
+        currentItems.getOrNull(index)?.let { listener?.onSuggestionClicked(it) }
+    }
+
+    internal fun performBlockSuggestionForTest(index: Int) {
+        currentItems.getOrNull(index)?.let { listener?.onBlockSuggestion(it) }
+    }
+
+    internal fun performAddSuggestionToDictionaryForTest(index: Int) {
+        currentItems.getOrNull(index)?.let { listener?.onAddSuggestionToDictionary(it) }
+    }
 
     private fun dp(value: Float): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics).toInt()

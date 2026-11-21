@@ -12,12 +12,16 @@ import com.udara.Utype.data.KeyboardThemeId
 import com.udara.Utype.data.LanguageMode
 import com.udara.Utype.data.OneHandedMode
 import com.udara.Utype.data.TextShortcutEntity
+import com.udara.Utype.engine.DictionaryCryptoExporter
+import com.udara.Utype.engine.PersonalWordItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -35,11 +39,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         initialValue = emptyList(),
     )
 
-    val learnedWordCount: StateFlow<Int> = app.database.learnedWordDao().observeCount().stateIn(
+    val learnedWordCount: StateFlow<Int> = app.database.personalWordDao().observeCount().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = 0,
     )
+
+    private val _personalWords = MutableStateFlow<List<PersonalWordItem>>(emptyList())
+    val personalWords: StateFlow<List<PersonalWordItem>> = _personalWords.asStateFlow()
 
     val clipboardItems: StateFlow<List<ClipboardItem>> = app.clipboardRepository.observeItems().stateIn(
         scope = viewModelScope,
@@ -54,6 +61,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val current = app.settingsRepository.currentSettings()
             app.clipboardRepository.cleanupExpired(current.clipboardDuration.millis)
+            app.suggestionEngine.initialize()
+            _personalWords.value = app.suggestionEngine.getPersonalWords()
+        }
+    }
+
+    fun refreshPersonalWords() {
+        viewModelScope.launch {
+            app.suggestionEngine.refreshDynamicData()
+            _personalWords.value = app.suggestionEngine.getPersonalWords()
         }
     }
 
@@ -92,10 +108,76 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun addPersonalWord(word: String, language: LanguageMode) {
+        viewModelScope.launch {
+            val added = app.suggestionEngine.addPersonalWord(word, language)
+            if (added) {
+                _personalWords.value = app.suggestionEngine.getPersonalWords()
+                _statusMessage.value = "Added to personal dictionary."
+            } else {
+                _statusMessage.value = "Enter a single valid word (max 40 characters)."
+            }
+        }
+    }
+
+    fun removePersonalWord(word: String, language: LanguageMode) {
+        viewModelScope.launch {
+            app.suggestionEngine.removePersonalWord(word, language)
+            _personalWords.value = app.suggestionEngine.getPersonalWords()
+            _statusMessage.value = "Removed word from personal dictionary."
+        }
+    }
+
     fun clearLearnedWords() {
         viewModelScope.launch {
             app.suggestionEngine.clearLearnedWords()
-            _statusMessage.value = "All learned words cleared."
+            _personalWords.value = emptyList()
+            _statusMessage.value = "All personal & learned words cleared."
+        }
+    }
+
+    fun exportEncryptedDictionaryToUri(uri: Uri, passphrase: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val encrypted = app.suggestionEngine.exportEncryptedDictionary(passphrase)
+                    app.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(encrypted.toByteArray(Charsets.UTF_8))
+                    } ?: error("Cannot write to selected file.")
+                }
+            }
+            _statusMessage.value = result.fold(
+                onSuccess = { "Encrypted dictionary exported successfully." },
+                onFailure = { err -> "Dictionary export failed: ${err.message}" },
+            )
+        }
+    }
+
+    fun importEncryptedDictionaryFromUri(uri: Uri, passphrase: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val bytes = app.contentResolver.openInputStream(uri)?.use { input ->
+                        val data = input.readBytes()
+                        require(data.size <= DictionaryCryptoExporter.MAX_IMPORT_BYTES) {
+                            "Dictionary file exceeds 2 MB limit."
+                        }
+                        data
+                    } ?: error("Cannot read selected file.")
+                    val count = app.suggestionEngine.importEncryptedDictionary(
+                        encryptedJson = String(bytes, Charsets.UTF_8),
+                        passphrase = passphrase,
+                    )
+                    count
+                }
+            }
+            if (result.isSuccess) {
+                _personalWords.value = app.suggestionEngine.getPersonalWords()
+            }
+            _statusMessage.value = result.fold(
+                onSuccess = { count -> "Imported $count words into personal dictionary." },
+                onFailure = { err -> "Dictionary import failed: ${err.message}" },
+            )
         }
     }
 
@@ -131,6 +213,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val result = app.backupManager.importFromUri(uri)
             if (result.isSuccess) {
                 app.suggestionEngine.refreshDynamicData()
+                _personalWords.value = app.suggestionEngine.getPersonalWords()
             }
             _statusMessage.value = result.fold(
                 onSuccess = { summary ->

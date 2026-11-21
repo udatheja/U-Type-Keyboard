@@ -1,0 +1,19 @@
+# Bundled Wordlists & Bigram Tables — Open License Attribution
+#
+# Format:
+# - en_wordlist.txt / si_wordlist.txt: "<word> <frequency>" (UTF-8, space-separated)
+#   Compatible with SymSpell frequency dictionary format (e.g. frequency_dictionary_en_82_765.txt).
+# - bigrams_en.txt / bigrams_si.txt: "<previous_word> <next_word> <weight>" (UTF-8)
+# - offensive_en.txt: "<word>" (UTF-8, one lowercase word per line)
+#
+# Licensing:
+# - The curated offline frequency wordlists, bigram context tables, and Sinhala
+#   vocabulary bundled in this application are released under CC0 1.0 Universal
+#   (Public Domain Dedication) / MIT License for offline personal use.
+# - SymSpell algorithm reference: Wolf Garbe (MIT License).
+#   See https://github.com/wolfgarbe/SymSpell for the symmetric delete algorithm
+#   and optional larger open-licensed English frequency dictionaries (CC-BY-SA / MIT).
+#
+# Privacy:
+# - All dictionaries, bigrams, and personal words remain 100% offline on-device.
+# - No dictionary data or user input is ever transmitted over any network.

@@ -38,20 +38,25 @@ class UTypeApplication : Application() {
 
         database = UTypeDatabase.getInstance(this)
         settingsRepository = SettingsRepository(this)
+        val keystoreCrypto = AndroidKeystoreClipboardCrypto()
         clipboardRepository = ClipboardRepository(
             dao = database.clipboardDao(),
-            crypto = AndroidKeystoreClipboardCrypto(),
+            crypto = keystoreCrypto,
         )
         suggestionEngine = SuggestionEngine(
             context = this,
             learnedWordDao = database.learnedWordDao(),
             shortcutDao = database.textShortcutDao(),
+            personalWordDao = database.personalWordDao(),
+            blockedSuggestionDao = database.blockedSuggestionDao(),
+            crypto = keystoreCrypto,
         )
         backupManager = BackupManager(
             context = this,
             settingsRepo = settingsRepository,
             db = database,
             clipboardRepo = clipboardRepository,
+            crypto = keystoreCrypto,
         )
 
         // Schedule reliable 15-minute background WorkManager cleanup for expired clipboard items

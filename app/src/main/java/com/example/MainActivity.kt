@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Tapjacking protection across settings & destructive actions
+        window.decorView.filterTouchesWhenObscured = true
         parseDestination(intent)?.let { target ->
             externalDestinationState.value = target
         }
@@ -78,12 +80,23 @@ class MainActivity : ComponentActivity() {
             val settings by vm.settings.collectAsStateWithLifecycle()
             val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
             val learnedCount by vm.learnedWordCount.collectAsStateWithLifecycle()
+            val personalWords by vm.personalWords.collectAsStateWithLifecycle()
             val clipboardItems by vm.clipboardItems.collectAsStateWithLifecycle()
             val statusMessage by vm.statusMessage.collectAsStateWithLifecycle()
 
             var destination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
             val externalTarget by externalDestinationState
             val snackbarHostState = remember { SnackbarHostState() }
+
+            LaunchedEffect(destination) {
+                val isSensitiveScreen = destination == AppDestination.BACKUP_CLIPBOARD ||
+                    destination == AppDestination.SETTINGS
+                if (isSensitiveScreen) {
+                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                }
+            }
 
             LaunchedEffect(externalTarget) {
                 externalTarget?.let { target ->
@@ -166,6 +179,7 @@ class MainActivity : ComponentActivity() {
                             AppDestination.SETTINGS -> TypingSettingsScreen(
                                 settings = settings,
                                 learnedWordCount = learnedCount,
+                                personalWords = personalWords,
                                 viewModel = vm,
                             )
                             AppDestination.BACKUP_CLIPBOARD -> ShortcutsAndDataScreen(
