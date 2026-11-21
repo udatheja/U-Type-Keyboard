@@ -17,4 +17,20 @@
     <string name="cd_emoji">Emoji panel</string>
     <string name="cd_symbols">Symbols</string>
     <string name="cd_space">Space</string>
+    <string name="phonetic_index_title">Index</string>
+    <string name="phonetic_index_card_title">Phonetic Letter Index</string>
+    <string name="phonetic_index_card_subtitle">Please select the row which contains the letter you\'re looking for.</string>
+    <string name="phonetic_index_search_hint">Search Sinhala letter or Singlish keys (e.g. ඳ, kru, sh)</string>
+    <string name="phonetic_index_no_results">No phonetic matches for \"%1$s\". Try a Sinhala letter or Singlish key.</string>
+    <string name="phonetic_index_matches_count">%1$d matching letters — tap any tile to preview</string>
+    <string name="phonetic_index_examples_title">Quick Word Examples</string>
+    <string name="phonetic_index_examples_subtitle">Tap any word to see how its Singlish keys combine.</string>
+    <string name="phonetic_index_shift_tip">Tip: Capital letters require Shift (A = ඇ, N = ණ, L = ළ, T = ඨ, D = ඪ, S = ෂ, B = ඹ, R = ඍ, H = ඃ, X = ඞ).</string>
+    <string name="phonetic_index_practice_label">Live Singlish Preview — tap any letter tile or type below</string>
+    <string name="phonetic_index_practice_placeholder">Type Singlish to try (e.g. sixhala, shrii, koLaBa)</string>
+    <string name="home_phonetic_guide_title">Sinhala Phonetic Index</string>
+    <string name="home_phonetic_guide_subtitle">How to type Sinhala letters (අ, ක, ඳ, පිල්ලම්)</string>
+    <string name="cd_search_phonetic">Search phonetic letters</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_clear_practice">Clear practice input</string>
 </resources>

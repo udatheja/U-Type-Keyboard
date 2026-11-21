@@ -37,6 +37,7 @@ import com.udara.Utype.settings.AppDestination
 import com.udara.Utype.settings.AppearanceScreen
 import com.udara.Utype.settings.HomeDashboardScreen
 import com.udara.Utype.settings.OnboardingScreen
+import com.udara.Utype.settings.PhoneticIndexScreen
 import com.udara.Utype.settings.PrivacyScreen
 import com.udara.Utype.settings.SettingsViewModel
 import com.udara.Utype.settings.ShortcutsAndDataScreen
@@ -131,6 +132,7 @@ class MainActivity : ComponentActivity() {
                                 AppDestination.BACKUP_CLIPBOARD -> "Clipboard & Backup"
                                 AppDestination.SETUP -> "Keyboard Setup"
                                 AppDestination.SHORTCUTS -> "Text Shortcuts"
+                                AppDestination.PHONETIC_INDEX -> "Index"
                                 AppDestination.PRIVACY -> "Privacy & About"
                                 AppDestination.HOME -> ""
                             }
@@ -181,6 +183,7 @@ class MainActivity : ComponentActivity() {
                                 learnedWordCount = learnedCount,
                                 personalWords = personalWords,
                                 viewModel = vm,
+                                onOpenPhoneticIndex = { destination = AppDestination.PHONETIC_INDEX },
                             )
                             AppDestination.BACKUP_CLIPBOARD -> ShortcutsAndDataScreen(
                                 settings = settings,
@@ -200,6 +203,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettingsTab = { destination = AppDestination.THEMES },
                                 onOnboardingCompleted = { vm.markOnboardingDone() },
                             )
+                            AppDestination.PHONETIC_INDEX -> PhoneticIndexScreen()
                             AppDestination.PRIVACY -> PrivacyScreen()
                         }
                     }

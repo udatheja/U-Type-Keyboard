@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -41,6 +42,7 @@ fun TypingSettingsScreen(
     learnedWordCount: Int,
     personalWords: List<PersonalWordItem>,
     viewModel: SettingsViewModel,
+    onOpenPhoneticIndex: () -> Unit = {},
 ) {
     var singlishProbe by rememberSaveable { mutableStateOf("ammaa") }
     val liveSinhala = remember(singlishProbe) { SinhalaTransliterator.transliterate(singlishProbe) }
@@ -301,6 +303,15 @@ fun TypingSettingsScreen(
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    OutlinedButton(
+                        onClick = onOpenPhoneticIndex,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_open_phonetic_index_button"),
+                    ) {
+                        Text("Open Full Sinhala Phonetic Letter Index")
+                    }
                 }
             }
         }

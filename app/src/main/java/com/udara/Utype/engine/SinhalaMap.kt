@@ -82,6 +82,8 @@ object SinhalaMap {
         "Kh" to "ඛ",
         "gh" to "ඝ",
         "Gh" to "ඝ",
+        "jh" to "ඣ",
+        "Jh" to "ඣ",
         "ph" to "ඵ",
         "Ph" to "ඵ",
         "bh" to "භ",
