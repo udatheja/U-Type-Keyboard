@@ -49,6 +49,7 @@ class SettingsRepository(
         val SINHALA_DICTIONARY_ENABLED = booleanPreferencesKey("sinhala_dictionary_enabled")
         val CLIPBOARD_ENABLED = booleanPreferencesKey("clipboard_enabled")
         val CLIPBOARD_DURATION_MIN = intPreferencesKey("clipboard_duration_min")
+        val BLOCK_SCREENSHOTS = booleanPreferencesKey("block_screenshots")
         val ONE_HANDED_MODE = stringPreferencesKey("one_handed_mode")
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
@@ -86,6 +87,7 @@ class SettingsRepository(
         sinhalaDictionaryEnabled = prefs[Keys.SINHALA_DICTIONARY_ENABLED] ?: true,
         clipboardEnabled = prefs[Keys.CLIPBOARD_ENABLED] ?: true,
         clipboardDuration = ClipboardDuration.fromMinutes(prefs[Keys.CLIPBOARD_DURATION_MIN] ?: 120),
+        blockScreenshots = prefs[Keys.BLOCK_SCREENSHOTS] ?: false,
         oneHandedMode = OneHandedMode.fromId(prefs[Keys.ONE_HANDED_MODE]),
         onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
     )
@@ -116,6 +118,7 @@ class SettingsRepository(
         prefs[Keys.SINHALA_DICTIONARY_ENABLED] = s.sinhalaDictionaryEnabled
         prefs[Keys.CLIPBOARD_ENABLED] = s.clipboardEnabled
         prefs[Keys.CLIPBOARD_DURATION_MIN] = s.clipboardDuration.minutes
+        prefs[Keys.BLOCK_SCREENSHOTS] = s.blockScreenshots
         prefs[Keys.ONE_HANDED_MODE] = s.oneHandedMode.id
         prefs[Keys.ONBOARDING_COMPLETED] = s.onboardingCompleted
     }

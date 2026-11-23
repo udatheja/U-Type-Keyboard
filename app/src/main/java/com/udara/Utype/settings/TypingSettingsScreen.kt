@@ -270,6 +270,15 @@ fun TypingSettingsScreen(
                         tag = "toggle_key_sound",
                         onCheckedChange = { v -> viewModel.updateSettings { it.copy(keySound = v) } },
                     )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    SettingToggleRow(
+                        title = "Block Screenshots on Sensitive Screens",
+                        subtitle = "Enable Android FLAG_SECURE on Clipboard, Backup & Settings (blacks out screen casting)",
+                        checked = settings.blockScreenshots,
+                        tag = "toggle_block_screenshots",
+                        onCheckedChange = { v -> viewModel.updateSettings { it.copy(blockScreenshots = v) } },
+                    )
                 }
             }
 

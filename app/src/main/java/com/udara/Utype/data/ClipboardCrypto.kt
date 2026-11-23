@@ -42,17 +42,30 @@ class AndroidKeystoreClipboardCrypto : ClipboardCrypto {
     private val lock = Any()
 
     @Volatile
+    private var cachedKeystoreKey: SecretKey? = null
+
+    @Volatile
     private var fallbackKey: SecretKey? = null
 
     private fun getOrCreateKey(forceRecreate: Boolean = false): Pair<SecretKey, Boolean> {
+        if (!forceRecreate) {
+            cachedKeystoreKey?.let { return it to true }
+        }
         synchronized(lock) {
+            if (!forceRecreate) {
+                cachedKeystoreKey?.let { return it to true }
+            }
             try {
                 val ks = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
                 if (forceRecreate && ks.containsAlias(KEY_ALIAS)) {
                     ks.deleteEntry(KEY_ALIAS)
+                    cachedKeystoreKey = null
                 }
                 val existing = ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
-                if (existing != null) return existing.secretKey to true
+                if (existing != null) {
+                    cachedKeystoreKey = existing.secretKey
+                    return existing.secretKey to true
+                }
 
                 val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
                 val spec = KeyGenParameterSpec.Builder(
@@ -64,7 +77,9 @@ class AndroidKeystoreClipboardCrypto : ClipboardCrypto {
                     .setKeySize(256)
                     .build()
                 keyGenerator.init(spec)
-                return keyGenerator.generateKey() to true
+                val generated = keyGenerator.generateKey()
+                cachedKeystoreKey = generated
+                return generated to true
             } catch (_: Exception) {
                 val existingFallback = fallbackKey
                 if (existingFallback != null) return existingFallback to false

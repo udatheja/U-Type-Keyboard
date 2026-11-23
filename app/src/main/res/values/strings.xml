@@ -33,4 +33,23 @@
     <string name="cd_search_phonetic">Search phonetic letters</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_clear_practice">Clear practice input</string>
+    <string name="cd_creator_photo">Photo of Udara Fernando, Founder and Creator</string>
+    <string name="creator_role_label">Founder &amp; Creator · U Type</string>
+    <string name="creator_bio_tagline">Privacy-first, 100% offline Sinhala &amp; English keyboard crafted for everyday typing.</string>
+    <string name="clipboard_settings_title">Clipboard Settings</string>
+    <string name="clipboard_save_toggle_title">Save Copied Items</string>
+    <string name="clipboard_save_toggle_subtitle">Encrypted locally with AES-256-GCM • Paused in Incognito &amp; password fields</string>
+    <string name="clipboard_autodelete_title">Auto-Delete Unpinned Items After</string>
+    <string name="clipboard_autodelete_subtitle">Default is 2 hours. Pinned items never expire, and unpinning restarts a fresh timer.</string>
+    <string name="clipboard_storage_summary">Stored locally: %1$d pinned • %2$d unpinned (max 50)</string>
+    <string name="clipboard_clear_unpinned">Clear All Unpinned Items</string>
+    <string name="clipboard_saved_items_title">Saved Clips</string>
+    <string name="clipboard_empty_state">No saved clipboard items yet. Text you copy while clipboard saving is enabled will appear here.</string>
+    <string name="backup_summary_title">What\'s Included in Backup</string>
+    <string name="backup_summary_subtitle">Unpinned clipboard history and password fields are never exported.</string>
+    <string name="backup_local_title">Local JSON Backup &amp; Restore</string>
+    <string name="backup_local_subtitle">Save a local copy of your keyboard setup or restore from a previous backup file.</string>
+    <string name="backup_privacy_title">100% Offline Backup</string>
+    <string name="backup_privacy_body">Backups never touch any server. For passphrase-encrypted personal dictionary export/import, open Personal Dictionary inside Settings.</string>
+    <string name="backup_open_encrypted_dict">Open Encrypted Personal Dictionary</string>
 </resources>

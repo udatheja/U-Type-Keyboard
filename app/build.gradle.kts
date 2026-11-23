@@ -16,8 +16,8 @@ android {
     applicationId = "com.udara.Utype"
     minSdk = 26
     targetSdk = 36
-    versionCode = 7
-    versionName = "1.4.0"
+    versionCode = 9
+    versionName = "1.4.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

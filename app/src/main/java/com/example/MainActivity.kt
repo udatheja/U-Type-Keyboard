@@ -35,12 +35,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.theme.UTypeTheme
 import com.udara.Utype.settings.AppDestination
 import com.udara.Utype.settings.AppearanceScreen
+import com.udara.Utype.settings.BackupScreen
+import com.udara.Utype.settings.ClipboardSettingsScreen
 import com.udara.Utype.settings.HomeDashboardScreen
 import com.udara.Utype.settings.OnboardingScreen
 import com.udara.Utype.settings.PhoneticIndexScreen
 import com.udara.Utype.settings.PrivacyScreen
 import com.udara.Utype.settings.SettingsViewModel
-import com.udara.Utype.settings.ShortcutsAndDataScreen
+import com.udara.Utype.settings.ShortcutsScreen
 import com.udara.Utype.settings.TypingSettingsScreen
 
 class MainActivity : ComponentActivity() {
@@ -89,10 +91,11 @@ class MainActivity : ComponentActivity() {
             val externalTarget by externalDestinationState
             val snackbarHostState = remember { SnackbarHostState() }
 
-            LaunchedEffect(destination) {
-                val isSensitiveScreen = destination == AppDestination.BACKUP_CLIPBOARD ||
+            LaunchedEffect(destination, settings.blockScreenshots) {
+                val isSensitiveScreen = destination == AppDestination.CLIPBOARD ||
+                    destination == AppDestination.BACKUP ||
                     destination == AppDestination.SETTINGS
-                if (isSensitiveScreen) {
+                if (settings.blockScreenshots && isSensitiveScreen) {
                     window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
                 } else {
                     window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
@@ -129,11 +132,12 @@ class MainActivity : ComponentActivity() {
                             val title = when (destination) {
                                 AppDestination.THEMES -> "Themes & Layout"
                                 AppDestination.SETTINGS -> "Settings"
-                                AppDestination.BACKUP_CLIPBOARD -> "Clipboard & Backup"
+                                AppDestination.BACKUP -> "Backup & Restore"
+                                AppDestination.CLIPBOARD -> "Clipboard"
                                 AppDestination.SETUP -> "Keyboard Setup"
                                 AppDestination.SHORTCUTS -> "Text Shortcuts"
                                 AppDestination.PHONETIC_INDEX -> "Index"
-                                AppDestination.PRIVACY -> "Privacy & About"
+                                AppDestination.PRIVACY -> "About & Privacy"
                                 AppDestination.HOME -> ""
                             }
                             TopAppBar(
@@ -185,19 +189,21 @@ class MainActivity : ComponentActivity() {
                                 viewModel = vm,
                                 onOpenPhoneticIndex = { destination = AppDestination.PHONETIC_INDEX },
                             )
-                            AppDestination.BACKUP_CLIPBOARD -> ShortcutsAndDataScreen(
-                                settings = settings,
+                            AppDestination.BACKUP -> BackupScreen(
                                 shortcuts = shortcuts,
+                                learnedWordCount = learnedCount,
                                 clipboardItems = clipboardItems,
                                 viewModel = vm,
-                                focusShortcutsOnly = false,
+                                onOpenSettingsDictionary = { destination = AppDestination.SETTINGS },
                             )
-                            AppDestination.SHORTCUTS -> ShortcutsAndDataScreen(
+                            AppDestination.CLIPBOARD -> ClipboardSettingsScreen(
                                 settings = settings,
-                                shortcuts = shortcuts,
                                 clipboardItems = clipboardItems,
                                 viewModel = vm,
-                                focusShortcutsOnly = true,
+                            )
+                            AppDestination.SHORTCUTS -> ShortcutsScreen(
+                                shortcuts = shortcuts,
+                                viewModel = vm,
                             )
                             AppDestination.SETUP -> OnboardingScreen(
                                 onOpenSettingsTab = { destination = AppDestination.THEMES },

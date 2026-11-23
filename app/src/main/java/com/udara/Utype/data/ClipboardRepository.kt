@@ -1,6 +1,8 @@
 package com.udara.Utype.data
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 data class ClipboardItem(
@@ -32,9 +34,9 @@ class ClipboardRepository(
         const val DEFAULT_RETENTION_MILLIS = 2L * 60L * 60L * 1000L // 2 hours
     }
 
-    fun observeItems(): Flow<List<ClipboardItem>> = dao.observeAll().map { entities ->
-        entities.mapNotNull { decryptEntity(it) }
-    }
+    fun observeItems(): Flow<List<ClipboardItem>> = dao.observeAll()
+        .map { entities -> entities.mapNotNull { decryptEntity(it) } }
+        .flowOn(Dispatchers.IO)
 
     suspend fun getItems(retentionMillis: Long = DEFAULT_RETENTION_MILLIS): List<ClipboardItem> {
         cleanupExpired(retentionMillis)

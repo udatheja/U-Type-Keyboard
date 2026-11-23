@@ -188,6 +188,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun toggleClipboardPin(item: ClipboardItem) {
+        viewModelScope.launch {
+            app.clipboardRepository.togglePin(item)
+            _statusMessage.value = if (item.isPinned) {
+                "Unpinned clip — auto-delete timer restarted."
+            } else {
+                "Pinned clip — will not auto-delete."
+            }
+        }
+    }
+
+    fun deleteClipboardItem(id: Long) {
+        viewModelScope.launch {
+            app.clipboardRepository.deleteItem(id)
+            _statusMessage.value = "Deleted clipboard item."
+        }
+    }
+
+    fun formatClipboardTimeLeft(item: ClipboardItem, retentionMillis: Long): String {
+        return app.clipboardRepository.formatTimeLeft(item, retentionMillis)
+    }
+
     fun exportBackupToDownloads() {
         viewModelScope.launch {
             val result = app.backupManager.exportToDownloads()

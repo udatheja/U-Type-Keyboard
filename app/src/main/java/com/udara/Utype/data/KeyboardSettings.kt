@@ -211,6 +211,7 @@ data class KeyboardSettings(
     val sinhalaDictionaryEnabled: Boolean = true,
     val clipboardEnabled: Boolean = true,
     val clipboardDuration: ClipboardDuration = ClipboardDuration.HOUR_2,
+    val blockScreenshots: Boolean = false,
     val oneHandedMode: OneHandedMode = OneHandedMode.OFF,
     val onboardingCompleted: Boolean = false,
 )
